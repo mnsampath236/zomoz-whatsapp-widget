@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WhatsApp</title>
+<script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+<style>
+  :root{
+    --wa-green: #128C7E;
+    --wa-green-light: #DCF8C6;
+    --ink: #1F2328;
+    --ink-soft: #6B7280;
+    --line: #E5E7EB;
+    --bg: #F7F8FA;
+    --bubble-in: #FFFFFF;
+    --danger: #D64545;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+  }
+  #app{ display:flex; flex-direction:column; height:100vh; min-height:420px; }
+
+  /* header */
+  #header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; background:#fff; border-bottom:1px solid var(--line); flex-shrink:0;
+  }
+  #header .who{ display:flex; flex-direction:column; }
+  #header .who .name{ font-size:13px; font-weight:600; }
+  #header .who .num{ font-size:11.5px; color:var(--ink-soft); }
+  #header .num button{
+    border:none; background:none; color:var(--wa-green); font-size:11px; cursor:pointer; padding:0; margin-left:6px;
+    text-decoration:underline;
+  }
+  #status-dot{ width:8px; height:8px; border-radius:50%; background:#C4C7CC; margin-right:6px; display:inline-block; }
+  #status-dot.live{ background:#2FBF71; }
+
+  /* body */
+  #thread{ flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:8px; }
+  .bubble{
+    max-width:78%; padding:7px 10px; border-radius:10px; font-size:13px; line-height:1.4;
+    box-shadow:0 1px 1px rgba(0,0,0,0.05); position:relative; white-space:pre-wrap; word-break:break-word;
+  }
+  .bubble.in{ align-self:flex-start; background:var(--bubble-in); border:1px solid var(--line); border-top-left-radius:2px; }
+  .bubble.out{ align-self:flex-end; background:var(--wa-green-light); border-top-right-radius:2px; }
+  .bubble .meta{ display:block; margin-top:3px; font-size:10px; color:var(--ink-soft); text-align:right; }
+  .bubble.failed{ border-color:var(--danger); }
+  .bubble.failed .meta{ color:var(--danger); }
+
+  .day-sep{ align-self:center; font-size:10.5px; color:var(--ink-soft); background:#EDEFF2; padding:2px 8px; border-radius:8px; margin:4px 0; }
+
+  #empty, #loading, #error{
+    margin:auto; text-align:center; color:var(--ink-soft); font-size:13px; padding:20px; max-width:280px;
+  }
+  #error{ color:var(--danger); }
+  #loading .spinner{
+    width:22px; height:22px; border:2.5px solid var(--line); border-top-color:var(--wa-green);
+    border-radius:50%; margin:0 auto 10px; animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* cold-start template panel */
+  #cold-start{ padding:14px; border-top:1px solid var(--line); background:#fff; }
+  #cold-start p{ font-size:12px; color:var(--ink-soft); margin:0 0 8px; }
+  #cold-start input{
+    width:100%; padding:8px; font-size:12.5px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px;
+  }
+  #cold-start button{
+    width:100%; padding:8px; font-size:12.5px; font-weight:600; color:#fff; background:var(--wa-green);
+    border:none; border-radius:6px; cursor:pointer;
+  }
+  #cold-start button:disabled{ opacity:0.5; cursor:default; }
+
+  /* composer */
+  #composer{
+    display:flex; align-items:flex-end; gap:8px; padding:10px 12px; background:#fff; border-top:1px solid var(--line); flex-shrink:0;
+  }
+  #composer textarea{
+    flex:1; resize:none; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px;
+    font-family:inherit; max-height:90px; min-height:36px;
+  }
+  #composer button{
+    background:var(--wa-green); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:12.5px;
+    font-weight:600; cursor:pointer; flex-shrink:0;
+  }
+  #composer button:disabled{ opacity:0.5; cursor:default; }
+  #window-note{ font-size:10.5px; color:var(--ink-soft); padding:0 12px 8px; background:#fff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div class="who">
+      <div class="name"><span id="status-dot"></span><span id="lead-name">Loading…</span></div>
+      <div class="num" id="lead-number">—</div>
+    </div>
+  </div>
+
+  <div id="thread"></div>
+  <div id="loading"><div class="spinner"></div>Loading conversation…</div>
+  <div id="empty" style="display:none"></div>
+  <div id="error" style="display:none"></div>
+
+  <div id="cold-start" style="display:none">
+    <p>No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.</p>
+    <input id="tpl-name" placeholder="Template name (e.g. welcome_message)" />
+    <input id="tpl-lang" placeholder="Template language (e.g. en_US)" value="en_US" />
+    <input id="tpl-params" placeholder="Params, comma-separated (optional)" />
+    <button id="tpl-send">Send template to start conversation</button>
+  </div>
+
+  <div id="window-note" style="display:none"></div>
+  <div id="composer" style="display:none">
+    <textarea id="msg-box" placeholder="Type a reply…" rows="1"></textarea>
+    <button id="send-btn">Send</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIG — things you'll likely want to change
+   ========================================================================= */
+var CONFIG = {
+  // Name of the Zoho CRM Connection you create for Zernio (Setup > Developer
+  // Space > Connections). The connection stores the Zernio API key so it
+  // never has to live in this client-side file.
+  ZOHO_CONNECTION_NAME: "zernio",
+
+  // Zernio's API base (see docs.zernio.com — Base URL).
+  ZERNIO_BASE_URL: "https://zernio.com/api/v1",
+
+  // REQUIRED when the connected Zernio account has more than one WhatsApp
+  // number on it. This widget will only ever show/send on conversations
+  // belonging to this exact account — a search hit belonging to a
+  // different client's WhatsApp number is discarded, not just deprioritized.
+  // Get this from Zernio's GET /v1/accounts (the _id field for the account
+  // this specific module/client should use).
+  ZERNIO_ACCOUNT_ID: "6a5898a53d50078def9bb17c",
+
+  // CRM fields (on this module) to try, in order, when looking for a
+  // WhatsApp number for this record.
+  PHONE_FIELDS: ["Mobile", "Phone"],
+
+  // How often to poll for new messages while the panel is open (ms).
+  POLL_INTERVAL_MS: 6000
+};
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+var state = {
+  entity: null,        // "Leads" | "Contacts" | ...
+  recordId: null,
+  phone: null,          // normalized, digits only, no plus/spaces
+  conversationId: null,
+  accountId: null,       // Zernio's WhatsApp account id for this conversation
+  lastMessageAt: null,
+  pollTimer: null
+};
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* =========================================================================
+   PHONE NORMALIZATION
+   Zernio expects/returns phone numbers roughly in international format.
+   Zoho lead phone fields are freeform text, so this is a best-effort
+   normalization — adjust to match how your org actually enters numbers.
+   ========================================================================= */
+function normalizePhone(raw){
+  if(!raw) return null;
+  var digits = String(raw).replace(/[^\d]/g, "");
+  // If it looks like a 10-digit local Indian number with no country code,
+  // assume +91. Change / remove this default for your own market.
+  if(digits.length === 10) digits = "91" + digits;
+  return digits;
+}
+
+/* =========================================================================
+   ZERNIO CALLS — all routed through the Zoho Connection so the API key
+   never touches this file or the browser's network tab in plaintext.
+   ========================================================================= */
+function zernioRequest(path, method, params){
+  var httpMethod = method || "GET";
+  var req = {
+    url: CONFIG.ZERNIO_BASE_URL + path,
+    method: httpMethod,
+    // Zoho's Connection.invoke needs to be told where params go:
+    // 1 = query string (right for our GET calls), 2 = JSON body (right for POST).
+    param_type: httpMethod === "GET" ? 1 : 2
+  };
+  if(params) req.parameters = params;
+  return ZOHO.CRM.CONNECTION.invoke(CONFIG.ZOHO_CONNECTION_NAME, req).then(function(resp){
+    // Zoho wraps the third-party response; the raw body comes back nested
+    // under details.statusMessage (confirmed by direct console testing).
+    var body = resp && resp.details ? resp.details.statusMessage : resp;
+    if(typeof body === "string"){
+      try{ body = JSON.parse(body); }catch(e){ /* leave as string */ }
+    }
+    return body;
+  });
+}
+
+function findConversation(phone){
+  return zernioRequest("/inbox/conversations/search", "GET", {
+    query: phone,
+    platform: "whatsapp",
+    limit: 5
+  }).then(function(body){
+    var hits = (body && body.data) || [];
+    // Only ever accept a match belonging to THIS client's WhatsApp account —
+    // in a multi-client setup sharing one Zernio account, a search can
+    // return hits from other clients' numbers too, which must never surface
+    // here even if they'd otherwise look like a valid match.
+    var match = hits.find(function(h){
+      return h.conversation &&
+        String(h.conversation.id) &&
+        h.conversation.accountId === CONFIG.ZERNIO_ACCOUNT_ID;
+    });
+    return match ? match.conversation : null;
+  });
+}
+
+function fetchMessages(conversationId, accountId){
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "GET", {
+    accountId: accountId
+  }).then(function(body){ return (body && body.messages) || []; });
+}
+
+function sendMessage(conversationId, accountId, text){
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", {
+    accountId: accountId,
+    message: text
+  });
+}
+
+function sendTemplateStart(phone, accountId, templateName, templateLanguage, params){
+  return zernioRequest("/inbox/conversations", "POST", {
+    accountId: accountId,
+    participantId: phone,
+    platform: "whatsapp",
+    templateName: templateName,
+    templateLanguage: templateLanguage,
+    templateParams: params
+  });
+}
+
+/* =========================================================================
+   RENDERING
+   ========================================================================= */
+function fmtTime(ts){
+  try{
+    var d = new Date(ts);
+    return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  }catch(e){ return ""; }
+}
+
+function renderThread(messages){
+  var thread = $("thread");
+  thread.innerHTML = "";
+  if(!messages.length){
+    $("loading").style.display = "none";
+    $("empty").style.display = "block";
+    $("empty").textContent = "No messages yet.";
+    return;
+  }
+  $("loading").style.display = "none";
+  $("empty").style.display = "none";
+
+  var lastDay = null;
+  messages
+    .slice()
+    .sort(function(a,b){ return new Date(a.timestamp || a.createdAt) - new Date(b.timestamp || b.createdAt); })
+    .forEach(function(m){
+      var ts = m.timestamp || m.createdAt;
+      var day = ts ? new Date(ts).toDateString() : "";
+      if(day && day !== lastDay){
+        var sep = document.createElement("div");
+        sep.className = "day-sep";
+        sep.textContent = day;
+        thread.appendChild(sep);
+        lastDay = day;
+      }
+      var b = document.createElement("div");
+      var dir = m.direction === "outgoing" || m.direction === "out" ? "out" : "in";
+      b.className = "bubble " + dir + (m.deliveryStatus === "failed" ? " failed" : "");
+      var text = m.text || m.message || (m.attachments && m.attachments.length ? "[attachment]" : "");
+      b.textContent = text;
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = fmtTime(ts) + (m.deliveryStatus === "failed" ? " · failed" : "");
+      b.appendChild(meta);
+      thread.appendChild(b);
+    });
+
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function showComposer(show){
+  $("composer").style.display = show ? "flex" : "none";
+  $("window-note").style.display = show ? "block" : "none";
+  $("cold-start").style.display = show ? "none" : "block";
+}
+
+/* =========================================================================
+   MAIN FLOW
+   ========================================================================= */
+function loadConversationForPhone(phone){
+  $("loading").style.display = "block";
+  $("error").style.display = "none";
+  return findConversation(phone).then(function(conv){
+    if(!conv){
+      state.conversationId = null;
+      $("loading").style.display = "none";
+      showComposer(false);
+      return;
+    }
+    state.conversationId = conv.id;
+    state.accountId = conv.accountId;
+    $("status-dot").classList.add("live");
+    return refreshMessages().then(function(){ showComposer(true); });
+  }).catch(function(err){
+    console.error(err);
+    $("loading").style.display = "none";
+    $("error").style.display = "block";
+    $("error").textContent = "Couldn't load WhatsApp conversation. Check the Zernio connection.";
+  });
+}
+
+function refreshMessages(){
+  if(!state.conversationId) return Promise.resolve();
+  return fetchMessages(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID).then(function(messages){
+    renderThread(messages);
+  });
+}
+
+function startPolling(){
+  if(state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(function(){
+    if(document.hidden) return;
+    refreshMessages();
+  }, CONFIG.POLL_INTERVAL_MS);
+}
+
+function initRecord(){
+  ZOHO.CRM.API.getRecord({ Entity: state.entity, RecordID: state.recordId, approved: "both" })
+    .then(function(res){
+      var record = res.data && res.data[0];
+      if(!record){ throw new Error("Record not found"); }
+      var name = record.Full_Name || record.Last_Name || record.Company || record.Account_Name || "Lead";
+      $("lead-name").textContent = name;
+
+      var rawPhone = null;
+      CONFIG.PHONE_FIELDS.some(function(f){
+        if(record[f]){ rawPhone = record[f]; return true; }
+        return false;
+      });
+      var phone = normalizePhone(rawPhone);
+      state.phone = phone;
+      $("lead-number").textContent = rawPhone ? ("+" + phone) : "No phone number on this record";
+
+      if(!phone){
+        $("loading").style.display = "none";
+        $("empty").style.display = "block";
+        $("empty").textContent = "Add a phone number to this record to see WhatsApp messages.";
+        return;
+      }
+      return loadConversationForPhone(phone).then(startPolling);
+    })
+    .catch(function(err){
+      console.error(err);
+      $("loading").style.display = "none";
+      $("error").style.display = "block";
+      $("error").textContent = "Couldn't load this record.";
+    });
+}
+
+/* =========================================================================
+   EVENTS
+   ========================================================================= */
+$("send-btn").addEventListener("click", function(){
+  var box = $("msg-box");
+  var text = box.value.trim();
+  if(!text || !state.conversationId) return;
+  $("send-btn").disabled = true;
+  sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, text)
+    .then(function(){
+      box.value = "";
+      return refreshMessages();
+    })
+    .catch(function(err){
+      console.error(err);
+      alert("Message failed to send — you may be outside the 24-hour reply window, which requires a template.");
+    })
+    .finally(function(){ $("send-btn").disabled = false; });
+});
+
+$("msg-box").addEventListener("keydown", function(e){
+  if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    $("send-btn").click();
+  }
+});
+
+$("tpl-send").addEventListener("click", function(){
+  var name = $("tpl-name").value.trim();
+  var lang = $("tpl-lang").value.trim() || "en_US";
+  var params = $("tpl-params").value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  if(!name || !state.phone) return;
+  $("tpl-send").disabled = true;
+  sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, name, lang, params)
+    .then(function(){ return loadConversationForPhone(state.phone); })
+    .catch(function(err){
+      console.error(err);
+      alert("Couldn't send the template. Check the template name/language against your approved templates in Zernio.");
+    })
+    .finally(function(){ $("tpl-send").disabled = false; });
+});
+
+$("lead-number").addEventListener("dblclick", function(){
+  var edited = prompt("Override the WhatsApp number used to search (digits, with country code):", state.phone || "");
+  if(edited){
+    state.phone = edited.replace(/[^\d]/g, "");
+    $("lead-number").textContent = "+" + state.phone;
+    loadConversationForPhone(state.phone).then(startPolling);
+  }
+});
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+ZOHO.embeddedApp.on("PageLoad", function(data){
+  state.entity = data.Entity;
+  state.recordId = data.EntityId;
+  initRecord();
+});
+ZOHO.embeddedApp.init();
+</script>
+</body>
+</html>
