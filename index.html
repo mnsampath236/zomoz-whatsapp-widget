@@ -108,6 +108,13 @@
     font-weight:600; cursor:pointer; flex-shrink:0;
   }
   #composer button:disabled{ opacity:0.5; cursor:default; }
+  #attach-btn{
+    background:none !important; color:var(--ink-soft) !important; font-size:18px; padding:4px 6px !important;
+    line-height:1;
+  }
+  #upload-status{
+    font-size:10.5px; color:var(--ink-soft); padding:0 12px 6px; background:#fff;
+  }
   #window-note{ font-size:10.5px; color:var(--ink-soft); padding:0 12px 8px; background:#fff; }
 </style>
 </head>
@@ -139,9 +146,12 @@
 
   <div id="window-note" style="display:none"></div>
   <div id="composer" style="display:none">
+    <button id="attach-btn" type="button" title="Attach image, video, or document">📎</button>
+    <input id="file-input" type="file" accept="image/*,video/*,application/pdf" style="display:none" />
     <textarea id="msg-box" placeholder="Type a reply…" rows="1"></textarea>
     <button id="send-btn">Send</button>
   </div>
+  <div id="upload-status" style="display:none"></div>
 </div>
 
 <script>
@@ -176,7 +186,13 @@ var CONFIG = {
   NAME_FIELDS: ["Full_Name", "Last_Name", "Company", "Account_Name", "Name"],
 
   // How often to poll for new messages while the panel is open (ms).
-  POLL_INTERVAL_MS: 6000
+  POLL_INTERVAL_MS: 6000,
+
+  // Your Apps Script /exec URL (same one used for the webhook and for
+  // External Hosting) — used ONLY for media uploads, since those need to
+  // send raw file bytes that ZOHO.CRM.CONNECTION.invoke isn't built for.
+  // Same URL for every client's widget, since Code.gs is one shared backend.
+  APPS_SCRIPT_EXEC_URL: "https://script.google.com/macros/s/AKfycbz_8z2B0aDQNXgGdJUTsfGi7VdjYB9_TNU0cr0gd2fH_75HwGDTHg_vTlpeFvRY5XqEtg/exec"
 };
 
 /* =========================================================================
@@ -260,11 +276,57 @@ function fetchMessages(conversationId, accountId){
   }).then(function(body){ return (body && body.messages) || []; });
 }
 
-function sendMessage(conversationId, accountId, text){
-  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", {
-    accountId: accountId,
-    message: text
+function sendMessage(conversationId, accountId, text, attachment){
+  var params = { accountId: accountId, message: text || "" };
+  if(attachment){
+    params.attachmentUrl = attachment.url;
+    params.attachmentType = attachment.type;
+  }
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", params);
+}
+
+// Uploads bypass ZOHO.CRM.CONNECTION.invoke entirely (that's built for
+// JSON/query parameters, not file bytes) and go straight to the Apps
+// Script backend instead, which relays them to Zernio using its own
+// server-side copy of the API key. Content-Type is deliberately
+// text/plain, not application/json — Apps Script Web Apps can't handle
+// the CORS preflight a real application/json POST would trigger, but the
+// body is still valid JSON underneath; doPost already parses it that way.
+function uploadMedia(file){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error("Couldn't read the file")); };
+    reader.onload = function(){
+      var base64 = reader.result.split(",")[1]; // strip the data:mime;base64, prefix
+      fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=uploadMedia", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ fileBase64: base64, mimeType: file.type, filename: file.name })
+      })
+        .then(function(res){ return res.json(); })
+        .then(function(json){
+          if(json.zernioStatus !== 200 && json.zernioStatus !== 201){
+            return reject(new Error("Upload failed: " + JSON.stringify(json.zernioBody)));
+          }
+          // Response shape from Zernio's own upload endpoint hasn't been
+          // exercised in production yet — checking a couple of likely
+          // field names rather than assuming one, and surfacing the raw
+          // body in the error if neither matches so it's debuggable
+          // instead of silently failing.
+          var url = json.zernioBody && (json.zernioBody.publicUrl || json.zernioBody.url);
+          if(!url) return reject(new Error("No URL in upload response: " + JSON.stringify(json.zernioBody)));
+          resolve(url);
+        })
+        .catch(reject);
+    };
+    reader.readAsDataURL(file);
   });
+}
+
+function attachmentTypeFor(mimeType){
+  if(mimeType.indexOf("image/") === 0) return "image";
+  if(mimeType.indexOf("video/") === 0) return "video";
+  return "document";
 }
 
 function sendTemplateStart(phone, accountId, templateName, templateLanguage, params){
@@ -465,6 +527,41 @@ function initRecord(){
 /* =========================================================================
    EVENTS
    ========================================================================= */
+$("attach-btn").addEventListener("click", function(){
+  $("file-input").click();
+});
+
+$("file-input").addEventListener("change", function(){
+  var file = this.files[0];
+  this.value = ""; // reset so selecting the same file twice still fires 'change'
+  if(!file || !state.conversationId) return;
+
+  var status = $("upload-status");
+  status.style.display = "block";
+  status.textContent = "Uploading " + file.name + "…";
+  $("attach-btn").disabled = true;
+
+  uploadMedia(file)
+    .then(function(url){
+      status.textContent = "Sending…";
+      return sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, "", {
+        url: url,
+        type: attachmentTypeFor(file.type)
+      });
+    })
+    .then(function(){
+      status.style.display = "none";
+      return refreshMessages();
+    })
+    .catch(function(err){
+      console.error(err);
+      status.textContent = "Couldn't send that file — " + err.message;
+    })
+    .finally(function(){
+      $("attach-btn").disabled = false;
+    });
+});
+
 $("send-btn").addEventListener("click", function(){
   var box = $("msg-box");
   var text = box.value.trim();
