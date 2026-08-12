@@ -50,6 +50,15 @@
   .bubble .meta{ display:block; margin-top:3px; font-size:10px; color:var(--ink-soft); text-align:right; }
   .bubble.failed{ border-color:var(--danger); }
   .bubble.failed .meta{ color:var(--danger); }
+  .bubble-text{ white-space:pre-wrap; }
+
+  .attachment-box{ margin-bottom:4px; font-size:11.5px; color:var(--ink-soft); }
+  .attachment-image{ max-width:100%; max-height:220px; border-radius:6px; display:block; }
+  .attachment-video{ max-width:100%; max-height:220px; border-radius:6px; display:block; }
+  .attachment-audio{ width:100%; }
+  .attachment-file-link{
+    display:inline-block; color:var(--wa-green); text-decoration:underline; font-size:12.5px;
+  }
 
   .day-sep{ align-self:center; font-size:10.5px; color:var(--ink-soft); background:#EDEFF2; padding:2px 8px; border-radius:8px; margin:4px 0; }
 
@@ -329,6 +338,22 @@ function attachmentTypeFor(mimeType){
   return "document";
 }
 
+// Inbound media (from the customer) comes back from Zernio as a relative,
+// authenticated path — can't go straight in an <img src>, since the
+// browser has no way to attach the Bearer token that path needs. Routed
+// through Apps Script instead, which fetches it server-side (using its
+// own Zernio key) and hands back a data: URI. Outbound media (things we
+// sent) is already a plain public URL and skips this entirely.
+function fetchInboundMedia(relativePath){
+  var url = CONFIG.APPS_SCRIPT_EXEC_URL + "?action=fetchMedia&path=" + encodeURIComponent(relativePath);
+  return fetch(url)
+    .then(function(res){ return res.json(); })
+    .then(function(json){
+      if(json.error) throw new Error(json.error);
+      return json.dataUri;
+    });
+}
+
 function sendTemplateStart(phone, accountId, templateName, templateLanguage, params){
   return zernioRequest("/inbox/conversations", "POST", {
     accountId: accountId,
@@ -360,6 +385,53 @@ function fmtTime(ts){
   }catch(e){ return ""; }
 }
 
+function renderAttachmentInto(container, attachment){
+  var box = document.createElement("div");
+  box.className = "attachment-box";
+  box.textContent = "Loading " + (attachment.type || "attachment") + "…";
+  container.appendChild(box);
+
+  var isAbsolute = /^https?:\/\//.test(attachment.url || "");
+  var urlPromise = isAbsolute ? Promise.resolve(attachment.url) : fetchInboundMedia(attachment.url);
+
+  urlPromise.then(function(url){
+    box.innerHTML = "";
+    if(attachment.type === "image"){
+      var img = document.createElement("img");
+      img.src = url;
+      img.className = "attachment-image";
+      box.appendChild(img);
+    } else if(attachment.type === "video"){
+      var vid = document.createElement("video");
+      vid.src = url;
+      vid.controls = true;
+      vid.className = "attachment-video";
+      box.appendChild(vid);
+    } else if(attachment.type === "audio"){
+      // Unverified against a real inbound voice note — WhatsApp attachment
+      // types we've actually seen so far are image/file only. Included
+      // defensively since it follows the exact same pattern as video, but
+      // worth confirming against a real voice message if/when one arrives.
+      var aud = document.createElement("audio");
+      aud.src = url;
+      aud.controls = true;
+      aud.className = "attachment-audio";
+      box.appendChild(aud);
+    } else {
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "attachment-file-link";
+      link.textContent = "📄 Open document";
+      box.appendChild(link);
+    }
+  }).catch(function(err){
+    console.error(err);
+    box.textContent = "Couldn't load attachment";
+  });
+}
+
 function renderThread(messages){
   var thread = $("thread");
   thread.innerHTML = "";
@@ -389,8 +461,17 @@ function renderThread(messages){
       var b = document.createElement("div");
       var dir = m.direction === "outgoing" || m.direction === "out" ? "out" : "in";
       b.className = "bubble " + dir + (m.deliveryStatus === "failed" ? " failed" : "");
-      var text = m.text || m.message || (m.attachments && m.attachments.length ? "[attachment]" : "");
-      b.textContent = text;
+
+      if(m.attachments && m.attachments.length){
+        renderAttachmentInto(b, m.attachments[0]);
+      }
+      var text = m.text || m.message || "";
+      if(text){
+        var textEl = document.createElement("div");
+        textEl.className = "bubble-text";
+        textEl.textContent = text;
+        b.appendChild(textEl);
+      }
       var meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = fmtTime(ts) + (m.deliveryStatus === "failed" ? " · failed" : "");
