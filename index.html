@@ -48,9 +48,36 @@
   .bubble.in{ align-self:flex-start; background:var(--bubble-in); border:1px solid var(--line); border-top-left-radius:2px; }
   .bubble.out{ align-self:flex-end; background:var(--wa-green-light); border-top-right-radius:2px; }
   .bubble .meta{ display:block; margin-top:3px; font-size:10px; color:var(--ink-soft); text-align:right; }
+  .ticks{ margin-left:3px; font-size:11px; letter-spacing:-1px; }
+  .ticks.sent{ color:var(--ink-soft); }
+  .ticks.delivered{ color:var(--ink-soft); }
+  .ticks.read{ color:#34B7F1; }
   .bubble.failed{ border-color:var(--danger); }
   .bubble.failed .meta{ color:var(--danger); }
   .bubble-text{ white-space:pre-wrap; }
+
+  .react-trigger{
+    position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%;
+    background:#fff; border:1px solid var(--line); font-size:11px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; opacity:0.55;
+  }
+  .react-trigger:hover{ opacity:1; }
+
+  .reaction-badge{
+    position:absolute; bottom:-10px; left:8px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:1px 5px; font-size:11px; box-shadow:0 1px 1px rgba(0,0,0,0.08);
+  }
+  .bubble.out .reaction-badge{ left:auto; right:8px; }
+
+  .reaction-picker{
+    position:absolute; top:-34px; right:-6px; background:#fff; border:1px solid var(--line);
+    border-radius:20px; padding:3px 5px; display:flex; gap:2px; box-shadow:0 2px 6px rgba(0,0,0,0.15);
+    z-index:5;
+  }
+  .reaction-picker button{
+    border:none; background:none; font-size:16px; padding:2px 4px; cursor:pointer; border-radius:50%;
+  }
+  .reaction-picker button:hover, .reaction-picker button.active{ background:var(--bg); }
 
   .attachment-box{
     margin-bottom:4px; font-size:11.5px; color:var(--ink-soft);
@@ -143,6 +170,27 @@
     font-size:10.5px; color:var(--ink-soft); padding:0 12px 6px; background:#fff;
   }
   #window-note{ font-size:10.5px; color:var(--ink-soft); padding:0 12px 8px; background:#fff; }
+
+  #reply-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:6px 12px; background:#f0f0f0; border-top:1px solid var(--line); font-size:11.5px;
+  }
+  #reply-banner-text{ color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #reply-banner-cancel{
+    border:none; background:none; cursor:pointer; font-size:12px; color:var(--ink-soft); flex-shrink:0;
+  }
+  .reply-trigger{
+    position:absolute; top:-6px; left:-6px; width:20px; height:20px; border-radius:50%;
+    background:#fff; border:1px solid var(--line); font-size:10px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; opacity:0.55;
+  }
+  .reply-trigger:hover{ opacity:1; }
+
+  .quoted-reply{
+    border-left:3px solid var(--wa-green); background:rgba(0,0,0,0.04); border-radius:4px;
+    padding:3px 6px; margin-bottom:4px; font-size:11px; color:var(--ink-soft);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
 </style>
 </head>
 <body>
@@ -171,6 +219,10 @@
     <button id="tpl-send" disabled>Select a template</button>
   </div>
 
+  <div id="reply-banner" style="display:none">
+    <div id="reply-banner-text"></div>
+    <button id="reply-banner-cancel" type="button">✕</button>
+  </div>
   <div id="window-note" style="display:none"></div>
   <div id="composer" style="display:none">
     <button id="attach-btn" type="button" title="Attach image, video, or document">📎</button>
@@ -230,6 +282,7 @@ var state = {
   entity: null,        // "Leads" | "Contacts" | ...
   recordId: null,
   record: null,          // full record fetched via ZOHO.CRM.API.getRecord, used for the field-picker dropdown
+  replyTo: null,          // { id, preview } when composing a reply to a specific message
   phone: null,          // normalized, digits only, no plus/spaces
   conversationId: null,
   accountId: null,       // Zernio's WhatsApp account id for this conversation
@@ -265,7 +318,7 @@ function zernioRequest(path, method, params){
     method: httpMethod,
     // Zoho's Connection.invoke needs to be told where params go:
     // 1 = query string (right for our GET calls), 2 = JSON body (right for POST).
-    param_type: httpMethod === "GET" ? 1 : 2
+    param_type: (httpMethod === "GET" || httpMethod === "DELETE") ? 1 : 2
   };
   if(params) req.parameters = params;
   return ZOHO.CRM.CONNECTION.invoke(CONFIG.ZOHO_CONNECTION_NAME, req).then(function(resp){
@@ -305,11 +358,30 @@ function fetchMessages(conversationId, accountId){
   }).then(function(body){ return (body && body.messages) || []; });
 }
 
-function sendMessage(conversationId, accountId, text, attachment){
+function sendReaction(messageId, emoji){
+  return zernioRequest(
+    "/inbox/conversations/" + state.conversationId + "/messages/" + messageId + "/reactions",
+    "POST",
+    { accountId: CONFIG.ZERNIO_ACCOUNT_ID, emoji: emoji }
+  );
+}
+
+function removeReaction(messageId){
+  return zernioRequest(
+    "/inbox/conversations/" + state.conversationId + "/messages/" + messageId + "/reactions",
+    "DELETE",
+    { accountId: CONFIG.ZERNIO_ACCOUNT_ID }
+  );
+}
+
+function sendMessage(conversationId, accountId, text, attachment, replyTo){
   var params = { accountId: accountId, message: text || "" };
   if(attachment){
     params.attachmentUrl = attachment.url;
     params.attachmentType = attachment.type;
+  }
+  if(replyTo){
+    params.replyTo = replyTo;
   }
   return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", params);
 }
@@ -397,6 +469,22 @@ function fmtTime(ts){
   }catch(e){ return ""; }
 }
 
+// Only shows on our own sent messages (WhatsApp doesn't show delivery
+// ticks on the customer's messages, only on the business's). "failed" is
+// already covered by the separate "· failed" text, so skipped here to
+// avoid showing both. The exact status string for "sent but not yet
+// delivered" hasn't come up in a real payload we've seen — only
+// "delivered", "read", and "failed" have — so anything else falls back
+// to a single tick, matching WhatsApp's own convention for that state.
+function tickMarkFor(m, dir){
+  if(dir !== "out") return null;
+  if(m.deliveryStatus === "failed") return null;
+  var span = document.createElement("span");
+  span.className = "ticks " + (m.deliveryStatus === "read" ? "read" : m.deliveryStatus === "delivered" ? "delivered" : "sent");
+  span.textContent = (m.deliveryStatus === "read" || m.deliveryStatus === "delivered") ? "✓✓" : "✓";
+  return span;
+}
+
 function labelFor(type){
   if(type === "image") return "🖼 Open image";
   if(type === "video") return "🎬 Open video";
@@ -459,6 +547,50 @@ function renderAttachmentInto(container, attachment){
   container.appendChild(box);
 }
 
+var QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function toggleReactionPicker(bubbleEl, message){
+  var existing = bubbleEl.querySelector(".reaction-picker");
+  if(existing){ existing.remove(); return; }
+
+  var picker = document.createElement("div");
+  picker.className = "reaction-picker";
+  var myReaction = (message.reactions || []).find(function(r){ return r.fromMe; });
+
+  QUICK_REACTIONS.forEach(function(emoji){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = emoji;
+    if(myReaction && myReaction.emoji === emoji) btn.classList.add("active");
+    btn.addEventListener("click", function(){
+      picker.remove();
+      var action = (myReaction && myReaction.emoji === emoji)
+        ? removeReaction(message.id)
+        : sendReaction(message.id, emoji);
+      action.then(refreshMessages).catch(function(err){ console.error(err); });
+    });
+    picker.appendChild(btn);
+  });
+  bubbleEl.appendChild(picker);
+}
+
+// Short one-line summary of a message, used both for the reply banner and
+// for rendering a quoted-reply strip on messages that reference another.
+function previewFor(message){
+  if(!message) return "a message";
+  var text = message.text || message.message;
+  if(text) return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  if(message.attachments && message.attachments.length) return labelFor(message.attachments[0].type);
+  return "a message";
+}
+
+function startReplyTo(message){
+  state.replyTo = { id: message.id, preview: previewFor(message) };
+  $("reply-banner-text").textContent = "Replying to: " + state.replyTo.preview;
+  $("reply-banner").style.display = "flex";
+  $("msg-box").focus();
+}
+
 function renderThread(messages){
   var thread = $("thread");
   thread.innerHTML = "";
@@ -470,6 +602,9 @@ function renderThread(messages){
   }
   $("loading").style.display = "none";
   $("empty").style.display = "none";
+
+  var byId = {};
+  messages.forEach(function(m){ byId[m.id] = m; });
 
   var lastDay = null;
   messages
@@ -488,6 +623,15 @@ function renderThread(messages){
       var b = document.createElement("div");
       var dir = m.direction === "outgoing" || m.direction === "out" ? "out" : "in";
       b.className = "bubble " + dir + (m.deliveryStatus === "failed" ? " failed" : "");
+      b.style.position = "relative";
+
+      var quotedId = m.metadata && m.metadata.quotedMessageId;
+      if(quotedId){
+        var quoteEl = document.createElement("div");
+        quoteEl.className = "quoted-reply";
+        quoteEl.textContent = previewFor(byId[quotedId]);
+        b.appendChild(quoteEl);
+      }
 
       if(m.attachments && m.attachments.length){
         renderAttachmentInto(b, m.attachments[0]);
@@ -502,7 +646,33 @@ function renderThread(messages){
       var meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = fmtTime(ts) + (m.deliveryStatus === "failed" ? " · failed" : "");
+      var ticks = tickMarkFor(m, dir);
+      if(ticks) meta.appendChild(ticks);
       b.appendChild(meta);
+
+      var replyBtn = document.createElement("button");
+      replyBtn.type = "button";
+      replyBtn.className = "reply-trigger";
+      replyBtn.textContent = "↩️";
+      replyBtn.title = "Reply";
+      replyBtn.addEventListener("click", function(){ startReplyTo(m); });
+      b.appendChild(replyBtn);
+
+      var reactBtn = document.createElement("button");
+      reactBtn.type = "button";
+      reactBtn.className = "react-trigger";
+      reactBtn.textContent = "🙂";
+      reactBtn.title = "React";
+      reactBtn.addEventListener("click", function(){ toggleReactionPicker(b, m); });
+      b.appendChild(reactBtn);
+
+      if(m.reactions && m.reactions.length){
+        var badge = document.createElement("div");
+        badge.className = "reaction-badge";
+        badge.textContent = m.reactions.map(function(r){ return r.emoji; }).join(" ");
+        b.appendChild(badge);
+      }
+
       thread.appendChild(b);
     });
 
@@ -748,9 +918,12 @@ $("send-btn").addEventListener("click", function(){
   var text = box.value.trim();
   if(!text || !state.conversationId) return;
   $("send-btn").disabled = true;
-  sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, text)
+  var replyToId = state.replyTo && state.replyTo.id;
+  sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, text, null, replyToId)
     .then(function(){
       box.value = "";
+      state.replyTo = null;
+      $("reply-banner").style.display = "none";
       return refreshMessages();
     })
     .catch(function(err){
@@ -758,6 +931,11 @@ $("send-btn").addEventListener("click", function(){
       alert("Message failed to send — you may be outside the 24-hour reply window, which requires a template.");
     })
     .finally(function(){ $("send-btn").disabled = false; });
+});
+
+$("reply-banner-cancel").addEventListener("click", function(){
+  state.replyTo = null;
+  $("reply-banner").style.display = "none";
 });
 
 $("msg-box").addEventListener("keydown", function(e){
