@@ -337,19 +337,10 @@ function attachmentTypeFor(mimeType){
 
 // Inbound media (from the customer) comes back from Zernio as a relative,
 // authenticated path — can't go straight in an <img src>, since the
-// browser has no way to attach the Bearer token that path needs. Routed
-// through Apps Script instead, which fetches it server-side (using its
-// own Zernio key) and hands back a data: URI. Outbound media (things we
-// sent) is already a plain public URL and skips this entirely.
-function fetchInboundMedia(relativePath){
-  var url = CONFIG.APPS_SCRIPT_EXEC_URL + "?action=fetchMedia&path=" + encodeURIComponent(relativePath);
-  return fetch(url)
-    .then(function(res){ return res.json(); })
-    .then(function(json){
-      if(json.error) throw new Error(json.error);
-      return json.dataUri;
-    });
-}
+// browser has no way to attach the Bearer token that path needs. The
+// attachment link points directly at the Apps Script fetchMedia endpoint
+// instead, which does the authenticated fetch server-side. Outbound media
+// (things we sent) is already a plain public URL and skips this entirely.
 
 function sendTemplateStart(phone, accountId, templateName, templateLanguage, params){
   return zernioRequest("/inbox/conversations", "POST", {
@@ -390,27 +381,22 @@ function labelFor(type){
 }
 
 function renderAttachmentInto(container, attachment){
+  var isAbsolute = /^https?:\/\//.test(attachment.url || "");
+  var href = isAbsolute
+    ? attachment.url
+    : CONFIG.APPS_SCRIPT_EXEC_URL + "?action=fetchMedia&path=" + encodeURIComponent(attachment.url);
+
+  var link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.className = "attachment-file-link";
+  link.textContent = labelFor(attachment.type);
+
   var box = document.createElement("div");
   box.className = "attachment-box";
-  box.textContent = "Loading " + (attachment.type || "attachment") + "…";
+  box.appendChild(link);
   container.appendChild(box);
-
-  var isAbsolute = /^https?:\/\//.test(attachment.url || "");
-  var urlPromise = isAbsolute ? Promise.resolve(attachment.url) : fetchInboundMedia(attachment.url);
-
-  urlPromise.then(function(url){
-    box.innerHTML = "";
-    var link = document.createElement("a");
-    link.href = url;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.className = "attachment-file-link";
-    link.textContent = labelFor(attachment.type);
-    box.appendChild(link);
-  }).catch(function(err){
-    console.error(err);
-    box.textContent = "Couldn't load attachment";
-  });
 }
 
 function renderThread(messages){
