@@ -133,7 +133,15 @@ var CONFIG = {
   // Zernio's API base (see docs.zernio.com — Base URL).
   ZERNIO_BASE_URL: "https://zernio.com/api/v1",
 
-  // CRM fields (on Leads/Contacts) to try, in order, when looking for a
+  // REQUIRED when the connected Zernio account has more than one WhatsApp
+  // number on it. This widget will only ever show/send on conversations
+  // belonging to this exact account — a search hit belonging to a
+  // different client's WhatsApp number is discarded, not just deprioritized.
+  // Get this from Zernio's GET /v1/accounts (the _id field for the account
+  // this specific module/client should use).
+  ZERNIO_ACCOUNT_ID: "6a7c18f977555aae01f0ec6b",
+
+  // CRM fields (on this module) to try, in order, when looking for a
   // WhatsApp number for this record.
   PHONE_FIELDS: ["Mobile", "Phone"],
 
@@ -203,9 +211,14 @@ function findConversation(phone){
     limit: 5
   }).then(function(body){
     var hits = (body && body.data) || [];
-    // exact-ish match: participant identity contains our normalized digits
+    // Only ever accept a match belonging to THIS client's WhatsApp account —
+    // in a multi-client setup sharing one Zernio account, a search can
+    // return hits from other clients' numbers too, which must never surface
+    // here even if they'd otherwise look like a valid match.
     var match = hits.find(function(h){
-      return h.conversation && String(h.conversation.id);
+      return h.conversation &&
+        String(h.conversation.id) &&
+        h.conversation.accountId === CONFIG.ZERNIO_ACCOUNT_ID;
     });
     return match ? match.conversation : null;
   });
@@ -319,7 +332,7 @@ function loadConversationForPhone(phone){
 
 function refreshMessages(){
   if(!state.conversationId) return Promise.resolve();
-  return fetchMessages(state.conversationId, state.accountId).then(function(messages){
+  return fetchMessages(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID).then(function(messages){
     renderThread(messages);
   });
 }
@@ -373,7 +386,7 @@ $("send-btn").addEventListener("click", function(){
   var text = box.value.trim();
   if(!text || !state.conversationId) return;
   $("send-btn").disabled = true;
-  sendMessage(state.conversationId, state.accountId, text)
+  sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, text)
     .then(function(){
       box.value = "";
       return refreshMessages();
@@ -398,7 +411,7 @@ $("tpl-send").addEventListener("click", function(){
   var params = $("tpl-params").value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
   if(!name || !state.phone) return;
   $("tpl-send").disabled = true;
-  sendTemplateStart(state.phone, state.accountId, name, lang, params)
+  sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, name, lang, params)
     .then(function(){ return loadConversationForPhone(state.phone); })
     .catch(function(err){
       console.error(err);
