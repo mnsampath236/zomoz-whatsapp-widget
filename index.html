@@ -145,6 +145,12 @@ var CONFIG = {
   // WhatsApp number for this record.
   PHONE_FIELDS: ["Mobile", "Phone"],
 
+  // CRM fields to try, in order, for the record's display name in the
+  // header. Full_Name/Last_Name/Company/Account_Name are standard-module
+  // fields (Leads, Contacts, etc) — custom modules usually won't have
+  // these and need their own field added here (often just "Name").
+  NAME_FIELDS: ["Full_Name", "Last_Name", "Company", "Account_Name", "Name"],
+
   // How often to poll for new messages while the panel is open (ms).
   POLL_INTERVAL_MS: 6000
 };
@@ -350,7 +356,7 @@ function initRecord(){
     .then(function(res){
       var record = res.data && res.data[0];
       if(!record){ throw new Error("Record not found"); }
-      var name = record.Full_Name || record.Last_Name || record.Company || record.Account_Name || "Lead";
+      var name = CONFIG.NAME_FIELDS.map(function(f){ return record[f]; }).find(function(v){ return v; }) || "Lead";
       $("lead-name").textContent = name;
 
       var rawPhone = null;
