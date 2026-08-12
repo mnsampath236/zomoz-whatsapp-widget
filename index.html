@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -177,16 +176,18 @@ function normalizePhone(raw){
    never touches this file or the browser's network tab in plaintext.
    ========================================================================= */
 function zernioRequest(path, method, params){
+  var httpMethod = method || "GET";
   var req = {
     url: CONFIG.ZERNIO_BASE_URL + path,
-    method: method || "GET",
-    param_type: 1
+    method: httpMethod,
+    // Zoho's Connection.invoke needs to be told where params go:
+    // 1 = query string (right for our GET calls), 2 = JSON body (right for POST).
+    param_type: httpMethod === "GET" ? 1 : 2
   };
   if(params) req.parameters = params;
   return ZOHO.CRM.CONNECTION.invoke(CONFIG.ZOHO_CONNECTION_NAME, req).then(function(resp){
-    // Zoho wraps the third-party response; the raw body normally comes back
-    // as a JSON string under details.response or similar depending on how
-    // your connection is configured — this unwraps the common shapes.
+    // Zoho wraps the third-party response; the raw body comes back nested
+    // under details.statusMessage (confirmed by direct console testing).
     var body = resp && resp.details ? resp.details.statusMessage : resp;
     if(typeof body === "string"){
       try{ body = JSON.parse(body); }catch(e){ /* leave as string */ }
