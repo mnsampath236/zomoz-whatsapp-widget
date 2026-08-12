@@ -99,6 +99,10 @@
 
   .tpl-param-row{ margin-bottom:6px; }
   .tpl-param-row label{ display:block; font-size:10.5px; color:var(--ink-soft); margin-bottom:2px; }
+  .tpl-param-select{
+    width:100%; padding:5px 6px; font-size:11px; border:1px solid var(--line); border-radius:6px;
+    margin-bottom:3px; background:#fff; color:var(--ink-soft); font-family:inherit;
+  }
   .tpl-param-row input{
     width:100%; padding:6px 8px; font-size:12px; border:1px solid var(--line); border-radius:6px;
   }
@@ -225,6 +229,7 @@ var CONFIG = {
 var state = {
   entity: null,        // "Leads" | "Contacts" | ...
   recordId: null,
+  record: null,          // full record fetched via ZOHO.CRM.API.getRecord, used for the field-picker dropdown
   phone: null,          // normalized, digits only, no plus/spaces
   conversationId: null,
   accountId: null,       // Zernio's WhatsApp account id for this conversation
@@ -599,6 +604,7 @@ function initRecord(){
     .then(function(res){
       var record = res.data && res.data[0];
       if(!record){ throw new Error("Record not found"); }
+      state.record = record;
       var name = CONFIG.NAME_FIELDS.map(function(f){ return record[f]; }).find(function(v){ return v; }) || "Lead";
       $("lead-name").textContent = name;
 
@@ -811,17 +817,59 @@ function renderTemplatePreview(template, values){
   preview.style.display = "block";
 }
 
+// Pulls flat, displayable fields off the currently loaded record for the
+// dropdown — skips Zoho's internal $-prefixed metadata fields, empty
+// values, and anything that isn't cleanly representable as plain text
+// (arrays, nested objects without a .name — e.g. subform data). Lookup
+// fields (Owner, related records) come back as {id, name, ...} objects,
+// so those use .name.
+function usableRecordFields(){
+  var record = state.record;
+  if(!record) return [];
+  return Object.keys(record)
+    .filter(function(key){ return key.indexOf("$") !== 0; })
+    .map(function(key){
+      var val = record[key];
+      if(val == null) return null;
+      if(typeof val === "string" || typeof val === "number"){
+        return { field: key, value: String(val) };
+      }
+      if(typeof val === "object" && !Array.isArray(val) && val.name){
+        return { field: key, value: String(val.name) };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort(function(a, b){ return a.field.localeCompare(b.field); });
+}
+
 function renderParamInputs(template){
   var container = $("tpl-params-container");
   container.innerHTML = "";
   var labels = paramLabelsFor(template);
+  var fields = usableRecordFields();
+  var fieldOptions = '<option value="">— Pick a CRM field, or type below —</option>' +
+    fields.map(function(f){
+      return '<option value="' + escapeHtml(f.value) + '">' + escapeHtml(f.field) + ": " + escapeHtml(f.value) + '</option>';
+    }).join("");
+
   labels.forEach(function(label, i){
     var row = document.createElement("div");
     row.className = "tpl-param-row";
     var id = "tpl-param-" + i;
-    row.innerHTML = '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+    row.innerHTML =
+      '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+      '<select class="tpl-param-select" data-param-index="' + i + '">' + fieldOptions + '</select>' +
       '<input id="' + id + '" data-param-index="' + i + '" placeholder="' + escapeHtml(label) + '">';
     container.appendChild(row);
+  });
+  container.querySelectorAll(".tpl-param-select").forEach(function(select){
+    select.addEventListener("change", function(){
+      if(!this.value) return;
+      var idx = this.getAttribute("data-param-index");
+      $("tpl-param-" + idx).value = this.value;
+      updatePreviewFromInputs(template);
+    });
   });
   container.querySelectorAll("input").forEach(function(input){
     input.addEventListener("input", function(){ updatePreviewFromInputs(template); });
