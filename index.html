@@ -52,10 +52,18 @@
   .bubble.failed .meta{ color:var(--danger); }
   .bubble-text{ white-space:pre-wrap; }
 
-  .attachment-box{ margin-bottom:4px; font-size:11.5px; color:var(--ink-soft); }
+  .attachment-box{
+    margin-bottom:4px; font-size:11.5px; color:var(--ink-soft);
+    display:flex; align-items:center; gap:6px;
+  }
   .attachment-file-link{
     display:inline-block; color:var(--wa-green); text-decoration:underline; font-size:12.5px;
   }
+  .attachment-copy-btn{
+    border:none; background:none; cursor:pointer; font-size:13px; padding:2px 4px; line-height:1;
+    border-radius:4px; flex-shrink:0;
+  }
+  .attachment-copy-btn:hover{ background:rgba(0,0,0,0.06); }
 
   .day-sep{ align-self:center; font-size:10.5px; color:var(--ink-soft); background:#EDEFF2; padding:2px 8px; border-radius:8px; margin:4px 0; }
 
@@ -380,11 +388,33 @@ function labelFor(type){
   return "📄 Open document";
 }
 
+function copyAttachmentLink(url, btn){
+  var original = btn.textContent;
+  function showCopied(){
+    btn.textContent = "✓";
+    setTimeout(function(){ btn.textContent = original; }, 1500);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(showCopied).catch(function(){
+      // Some embedded WebViews block the Clipboard API outright — fall
+      // back to a native prompt() dialog, whose text field can still be
+      // long-pressed and copied manually even where scripted clipboard
+      // access is blocked.
+      prompt("Copy this link and paste it into your phone's browser:", url);
+    });
+  } else {
+    prompt("Copy this link and paste it into your phone's browser:", url);
+  }
+}
+
 function renderAttachmentInto(container, attachment){
   var isAbsolute = /^https?:\/\//.test(attachment.url || "");
   var href = isAbsolute
     ? attachment.url
     : CONFIG.APPS_SCRIPT_EXEC_URL + "?action=fetchMedia&path=" + encodeURIComponent(attachment.url);
+
+  var box = document.createElement("div");
+  box.className = "attachment-box";
 
   var link = document.createElement("a");
   link.href = href;
@@ -392,10 +422,24 @@ function renderAttachmentInto(container, attachment){
   link.rel = "noopener";
   link.className = "attachment-file-link";
   link.textContent = labelFor(attachment.type);
-
-  var box = document.createElement("div");
-  box.className = "attachment-box";
   box.appendChild(link);
+
+  // Tapping this link fails inside some embedded app WebViews (Google
+  // blocks its own domains from loading inside them, as a phishing
+  // protection — nothing wrong on our end). Copy-and-paste into a real
+  // browser sidesteps that entirely, since it's no longer an in-app
+  // navigation once pasted somewhere else.
+  var copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "attachment-copy-btn";
+  copyBtn.textContent = "📋";
+  copyBtn.title = "Copy link — use this if tapping doesn't open it";
+  copyBtn.addEventListener("click", function(e){
+    e.preventDefault();
+    copyAttachmentLink(href, copyBtn);
+  });
+  box.appendChild(copyBtn);
+
   container.appendChild(box);
 }
 
