@@ -66,14 +66,34 @@
   /* cold-start template panel */
   #cold-start{ padding:14px; border-top:1px solid var(--line); background:#fff; }
   #cold-start p{ font-size:12px; color:var(--ink-soft); margin:0 0 8px; }
-  #cold-start input{
+  #cold-start input, #tpl-select{
     width:100%; padding:8px; font-size:12.5px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px;
+    background:#fff; font-family:inherit;
   }
   #cold-start button{
     width:100%; padding:8px; font-size:12.5px; font-weight:600; color:#fff; background:var(--wa-green);
     border:none; border-radius:6px; cursor:pointer;
   }
   #cold-start button:disabled{ opacity:0.5; cursor:default; }
+
+  #tpl-preview{
+    background:var(--wa-green-light); border:1px solid var(--line); border-radius:8px;
+    padding:8px 10px; font-size:12.5px; line-height:1.45; white-space:pre-wrap; margin-bottom:8px;
+  }
+  #tpl-preview .var{ background:#fff3b0; border-radius:3px; padding:0 2px; }
+  #tpl-preview .var.empty{ background:#f3d4d4; }
+
+  .tpl-param-row{ margin-bottom:6px; }
+  .tpl-param-row label{ display:block; font-size:10.5px; color:var(--ink-soft); margin-bottom:2px; }
+  .tpl-param-row input{
+    width:100%; padding:6px 8px; font-size:12px; border:1px solid var(--line); border-radius:6px;
+  }
+
+  #template-toggle{ padding:6px 12px; background:#fff; border-top:1px solid var(--line); }
+  #template-toggle-btn{
+    border:none; background:none; color:var(--wa-green); font-size:11.5px; cursor:pointer; padding:2px 0;
+    text-decoration:underline;
+  }
 
   /* composer */
   #composer{
@@ -105,12 +125,16 @@
   <div id="empty" style="display:none"></div>
   <div id="error" style="display:none"></div>
 
+  <div id="template-toggle" style="display:none">
+    <button id="template-toggle-btn" type="button">Send a template message</button>
+  </div>
+
   <div id="cold-start" style="display:none">
-    <p>No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.</p>
-    <input id="tpl-name" placeholder="Template name (e.g. welcome_message)" />
-    <input id="tpl-lang" placeholder="Template language (e.g. en_US)" value="en_US" />
-    <input id="tpl-params" placeholder="Params, comma-separated (optional)" />
-    <button id="tpl-send">Send template to start conversation</button>
+    <p id="cold-start-text">No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.</p>
+    <select id="tpl-select"><option value="">Loading templates…</option></select>
+    <div id="tpl-preview" style="display:none"></div>
+    <div id="tpl-params-container"></div>
+    <button id="tpl-send" disabled>Select a template</button>
   </div>
 
   <div id="window-note" style="display:none"></div>
@@ -254,6 +278,16 @@ function sendTemplateStart(phone, accountId, templateName, templateLanguage, par
   });
 }
 
+function fetchTemplates(){
+  return zernioRequest("/whatsapp/templates", "GET", { accountId: CONFIG.ZERNIO_ACCOUNT_ID })
+    .then(function(body){
+      var all = (body && body.templates) || [];
+      // Only approved templates are actually sendable — PENDING/REJECTED
+      // ones would just fail, so no point offering them.
+      return all.filter(function(t){ return t.status === "APPROVED"; });
+    });
+}
+
 /* =========================================================================
    RENDERING
    ========================================================================= */
@@ -308,7 +342,24 @@ function renderThread(messages){
 function showComposer(show){
   $("composer").style.display = show ? "flex" : "none";
   $("window-note").style.display = show ? "block" : "none";
-  $("cold-start").style.display = show ? "none" : "block";
+  if(show){
+    // Conversation exists — composer is the default view, but the template
+    // option stays one click away rather than disappearing entirely, since
+    // the conversation may be outside the 24-hour window even though it
+    // exists (free text would fail in that case, template wouldn't).
+    $("cold-start").style.display = "none";
+    $("template-toggle").style.display = "block";
+    $("template-toggle-btn").textContent = "Send a template message";
+    $("cold-start-text").textContent =
+      "If it's been a while since they last replied, WhatsApp may require a template instead of a plain message.";
+  } else {
+    // No conversation at all yet — template is the only option, so show it
+    // directly and there's no need for the separate toggle link.
+    $("cold-start").style.display = "block";
+    $("template-toggle").style.display = "none";
+    $("cold-start-text").textContent =
+      "No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.";
+  }
 }
 
 /* =========================================================================
@@ -370,6 +421,15 @@ function startPolling(){
 }
 
 function initRecord(){
+  // Fired from inside PageLoad, so the SDK is definitely ready here —
+  // unlike a bare top-level call, which would race ZOHO.embeddedApp.init().
+  fetchTemplates()
+    .then(populateTemplateDropdown)
+    .catch(function(err){
+      console.error(err);
+      $("tpl-select").innerHTML = '<option value="">Couldn\'t load templates</option>';
+    });
+
   ZOHO.CRM.API.getRecord({ Entity: state.entity, RecordID: state.recordId, approved: "both" })
     .then(function(res){
       var record = res.data && res.data[0];
@@ -429,25 +489,133 @@ $("msg-box").addEventListener("keydown", function(e){
   }
 });
 
+$("template-toggle-btn").addEventListener("click", function(){
+  var isOpen = $("cold-start").style.display !== "none";
+  $("cold-start").style.display = isOpen ? "none" : "block";
+  $("template-toggle-btn").textContent = isOpen ? "Send a template message" : "Hide template form";
+});
+
+/* =========================================================================
+   TEMPLATE SELECTION, PREVIEW, AND DYNAMIC PARAM FIELDS
+   ========================================================================= */
+var TEMPLATES_BY_NAME = {};
+
+function escapeHtml(s){
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c];
+  });
+}
+
+function bodyComponentOf(template){
+  return (template.components || []).find(function(c){ return c.type === "BODY"; });
+}
+
+// Pulls the variable name hints Zernio/Meta provide (e.g. "riderName",
+// "orderID") so fields can be labeled meaningfully instead of just
+// "Variable 1", "Variable 2" — falls back to generic numbering if a
+// template doesn't have examples attached.
+function paramLabelsFor(template){
+  var body = bodyComponentOf(template);
+  if(!body) return [];
+  var count = (body.text.match(/\{\{\d+\}\}/g) || []).length;
+  var hints = body.example && body.example.body_text && body.example.body_text[0];
+  var labels = [];
+  for(var i = 0; i < count; i++){
+    labels.push(hints && hints[i] ? hints[i] : "Variable " + (i + 1));
+  }
+  return labels;
+}
+
+function renderTemplatePreview(template, values){
+  var body = bodyComponentOf(template);
+  var preview = $("tpl-preview");
+  if(!body){ preview.style.display = "none"; return; }
+  var html = escapeHtml(body.text).replace(/\{\{(\d+)\}\}/g, function(_, n){
+    var i = parseInt(n, 10) - 1;
+    var v = values[i];
+    return v ? '<span class="var">' + escapeHtml(v) + '</span>' : '<span class="var empty">{{' + n + '}}</span>';
+  });
+  preview.innerHTML = html.replace(/\n/g, "<br>");
+  preview.style.display = "block";
+}
+
+function renderParamInputs(template){
+  var container = $("tpl-params-container");
+  container.innerHTML = "";
+  var labels = paramLabelsFor(template);
+  labels.forEach(function(label, i){
+    var row = document.createElement("div");
+    row.className = "tpl-param-row";
+    var id = "tpl-param-" + i;
+    row.innerHTML = '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+      '<input id="' + id + '" data-param-index="' + i + '" placeholder="' + escapeHtml(label) + '">';
+    container.appendChild(row);
+  });
+  container.querySelectorAll("input").forEach(function(input){
+    input.addEventListener("input", function(){ updatePreviewFromInputs(template); });
+  });
+  updatePreviewFromInputs(template);
+}
+
+function currentParamValues(){
+  var inputs = Array.prototype.slice.call($("tpl-params-container").querySelectorAll("input"));
+  return inputs.map(function(i){ return i.value.trim(); });
+}
+
+function updatePreviewFromInputs(template){
+  renderTemplatePreview(template, currentParamValues());
+}
+
+function populateTemplateDropdown(templates){
+  TEMPLATES_BY_NAME = {};
+  var select = $("tpl-select");
+  select.innerHTML = "";
+  if(!templates.length){
+    select.innerHTML = '<option value="">No approved templates found</option>';
+    return;
+  }
+  select.innerHTML = '<option value="">Choose a template…</option>';
+  templates.forEach(function(t){
+    TEMPLATES_BY_NAME[t.name] = t;
+    var opt = document.createElement("option");
+    opt.value = t.name;
+    opt.textContent = t.name + " (" + t.category.toLowerCase() + ")";
+    select.appendChild(opt);
+  });
+}
+
+$("tpl-select").addEventListener("change", function(){
+  var template = TEMPLATES_BY_NAME[this.value];
+  if(!template){
+    $("tpl-preview").style.display = "none";
+    $("tpl-params-container").innerHTML = "";
+    $("tpl-send").disabled = true;
+    $("tpl-send").textContent = "Select a template";
+    return;
+  }
+  renderParamInputs(template);
+  $("tpl-send").disabled = false;
+  $("tpl-send").textContent = "Send template";
+});
+
 $("tpl-send").addEventListener("click", function(){
-  var name = $("tpl-name").value.trim();
-  var lang = $("tpl-lang").value.trim() || "en_US";
-  var params = $("tpl-params").value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
-  if(!name || !state.phone) return;
+  var template = TEMPLATES_BY_NAME[$("tpl-select").value];
+  if(!template || !state.phone) return;
+  var params = currentParamValues();
   $("tpl-send").disabled = true;
   $("tpl-send").textContent = "Sending…";
-  sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, name, lang, params)
+  sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, template.name, template.language, params)
     .then(function(){
       $("tpl-send").textContent = "Sent — opening chat…";
       return loadConversationForPhone(state.phone, /* useRetry */ true);
     })
     .catch(function(err){
       console.error(err);
-      alert("Couldn't send the template. Check the template name/language against your approved templates in Zernio.");
+      alert("Couldn't send the template. Check it's still approved in Zernio.");
     })
     .finally(function(){
       $("tpl-send").disabled = false;
-      $("tpl-send").textContent = "Send template to start conversation";
+      $("tpl-send").textContent = "Send template";
     });
 });
 
