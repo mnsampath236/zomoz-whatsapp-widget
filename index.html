@@ -126,6 +126,15 @@
     background:none !important; color:var(--ink-soft) !important; font-size:18px; padding:4px 6px !important;
     line-height:1;
   }
+  #record-btn{
+    background:none !important; color:var(--ink-soft) !important; font-size:18px; padding:4px 6px !important;
+    line-height:1;
+  }
+  #record-btn.recording{
+    color:var(--danger) !important;
+    animation:pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
   #upload-status{
     font-size:10.5px; color:var(--ink-soft); padding:0 12px 6px; background:#fff;
   }
@@ -162,6 +171,7 @@
   <div id="composer" style="display:none">
     <button id="attach-btn" type="button" title="Attach image, video, or document">📎</button>
     <input id="file-input" type="file" accept="image/*,video/*,application/pdf" style="display:none" />
+    <button id="record-btn" type="button" title="Record a voice message">🎤</button>
     <textarea id="msg-box" placeholder="Type a reply…" rows="1"></textarea>
     <button id="send-btn">Send</button>
   </div>
@@ -315,7 +325,7 @@ function uploadMedia(file){
       fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=uploadMedia", {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ fileBase64: base64, mimeType: file.type, filename: file.name })
+        body: JSON.stringify({ fileBase64: base64, mimeType: file.type, filename: file.name || "recording" })
       })
         .then(function(res){ return res.json(); })
         .then(function(json){
@@ -340,6 +350,7 @@ function uploadMedia(file){
 function attachmentTypeFor(mimeType){
   if(mimeType.indexOf("image/") === 0) return "image";
   if(mimeType.indexOf("video/") === 0) return "video";
+  if(mimeType.indexOf("audio/") === 0) return "audio";
   return "document";
 }
 
@@ -623,17 +634,15 @@ $("attach-btn").addEventListener("click", function(){
   $("file-input").click();
 });
 
-$("file-input").addEventListener("change", function(){
-  var file = this.files[0];
-  this.value = ""; // reset so selecting the same file twice still fires 'change'
+function uploadAndSendAttachment(file, uploadingLabel){
   if(!file || !state.conversationId) return;
-
   var status = $("upload-status");
   status.style.display = "block";
-  status.textContent = "Uploading " + file.name + "…";
+  status.textContent = uploadingLabel;
   $("attach-btn").disabled = true;
+  $("record-btn").disabled = true;
 
-  uploadMedia(file)
+  return uploadMedia(file)
     .then(function(url){
       status.textContent = "Sending…";
       return sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, "", {
@@ -647,11 +656,85 @@ $("file-input").addEventListener("change", function(){
     })
     .catch(function(err){
       console.error(err);
-      status.textContent = "Couldn't send that file — " + err.message;
+      status.textContent = "Couldn't send — " + err.message;
     })
     .finally(function(){
       $("attach-btn").disabled = false;
+      $("record-btn").disabled = false;
     });
+}
+
+$("file-input").addEventListener("change", function(){
+  var file = this.files[0];
+  this.value = ""; // reset so selecting the same file twice still fires 'change'
+  uploadAndSendAttachment(file, "Uploading " + file.name + "…");
+});
+
+/* =========================================================================
+   VOICE RECORDING
+   Sends as a plain audio attachment — not a native WhatsApp voice-note
+   bubble, which specifically requires an OGG/Opus file. Browsers'
+   MediaRecorder doesn't produce that container directly (real conversion
+   would be needed, not just a rename), so this is the simpler version:
+   record → upload → send, same pipeline as any other file. It'll show up
+   as a normal playable audio attachment on WhatsApp.
+   ========================================================================= */
+var mediaRecorder = null;
+var recordedChunks = [];
+var recordingTimerInterval = null;
+var recordingStartedAt = null;
+
+function startRecording(){
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+    recordedChunks = [];
+    var options = {};
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")){
+      options.mimeType = "audio/webm;codecs=opus";
+    }
+    mediaRecorder = new MediaRecorder(stream, options);
+
+    mediaRecorder.addEventListener("dataavailable", function(e){
+      if(e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+
+    mediaRecorder.addEventListener("stop", function(){
+      stream.getTracks().forEach(function(t){ t.stop(); }); // release the mic
+      var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      uploadAndSendAttachment(blob, "Uploading voice message…");
+    });
+
+    mediaRecorder.start();
+    recordingStartedAt = Date.now();
+    $("record-btn").textContent = "⏹";
+    $("record-btn").classList.add("recording");
+    $("upload-status").style.display = "block";
+    recordingTimerInterval = setInterval(function(){
+      var secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
+      var mm = Math.floor(secs / 60);
+      var ss = String(secs % 60).padStart(2, "0");
+      $("upload-status").textContent = "Recording… " + mm + ":" + ss;
+    }, 500);
+  }).catch(function(err){
+    console.error(err);
+    alert("Couldn't access the microphone: " + err.message);
+  });
+}
+
+function stopRecording(){
+  if(mediaRecorder && mediaRecorder.state !== "inactive"){
+    mediaRecorder.stop();
+  }
+  clearInterval(recordingTimerInterval);
+  $("record-btn").textContent = "🎤";
+  $("record-btn").classList.remove("recording");
+}
+
+$("record-btn").addEventListener("click", function(){
+  if(mediaRecorder && mediaRecorder.state === "recording"){
+    stopRecording();
+  } else {
+    startRecording();
+  }
 });
 
 $("send-btn").addEventListener("click", function(){
