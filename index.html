@@ -314,10 +314,28 @@ function showComposer(show){
 /* =========================================================================
    MAIN FLOW
    ========================================================================= */
-function loadConversationForPhone(phone){
+function delay(ms){
+  return new Promise(function(resolve){ setTimeout(resolve, ms); });
+}
+
+// Right after sending a template to start a new conversation, Zernio may
+// not have finished indexing it yet — a single immediate search can come
+// back empty even though the send genuinely succeeded. Retry a few times
+// with short pauses before giving up, rather than the composer just
+// silently never opening until the customer happens to reply later.
+function findConversationWithRetry(phone, attemptsLeft){
+  attemptsLeft = attemptsLeft == null ? 5 : attemptsLeft;
+  return findConversation(phone).then(function(conv){
+    if(conv || attemptsLeft <= 1) return conv;
+    return delay(1500).then(function(){ return findConversationWithRetry(phone, attemptsLeft - 1); });
+  });
+}
+
+function loadConversationForPhone(phone, useRetry){
   $("loading").style.display = "block";
   $("error").style.display = "none";
-  return findConversation(phone).then(function(conv){
+  var lookup = useRetry ? findConversationWithRetry(phone) : findConversation(phone);
+  return lookup.then(function(conv){
     if(!conv){
       state.conversationId = null;
       $("loading").style.display = "none";
@@ -417,13 +435,20 @@ $("tpl-send").addEventListener("click", function(){
   var params = $("tpl-params").value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
   if(!name || !state.phone) return;
   $("tpl-send").disabled = true;
+  $("tpl-send").textContent = "Sending…";
   sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, name, lang, params)
-    .then(function(){ return loadConversationForPhone(state.phone); })
+    .then(function(){
+      $("tpl-send").textContent = "Sent — opening chat…";
+      return loadConversationForPhone(state.phone, /* useRetry */ true);
+    })
     .catch(function(err){
       console.error(err);
       alert("Couldn't send the template. Check the template name/language against your approved templates in Zernio.");
     })
-    .finally(function(){ $("tpl-send").disabled = false; });
+    .finally(function(){
+      $("tpl-send").disabled = false;
+      $("tpl-send").textContent = "Send template to start conversation";
+    });
 });
 
 $("lead-number").addEventListener("dblclick", function(){
