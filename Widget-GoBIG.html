@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WhatsApp</title>
+<script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+<style>
+  :root{
+    --wa-green: #128C7E;
+    --wa-green-light: #DCF8C6;
+    --ink: #1F2328;
+    --ink-soft: #6B7280;
+    --line: #E5E7EB;
+    --bg: #F7F8FA;
+    --bubble-in: #FFFFFF;
+    --danger: #D64545;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+  }
+  #app{ display:flex; flex-direction:column; height:100vh; min-height:420px; }
+
+  /* header */
+  #header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; background:#fff; border-bottom:1px solid var(--line); flex-shrink:0;
+  }
+  #header .who{ display:flex; flex-direction:column; }
+  #header .who .name{ font-size:13px; font-weight:600; }
+  #header .who .num{ font-size:11.5px; color:var(--ink-soft); }
+  #header .num button{
+    border:none; background:none; color:var(--wa-green); font-size:11px; cursor:pointer; padding:0; margin-left:6px;
+    text-decoration:underline;
+  }
+  #status-dot{ width:8px; height:8px; border-radius:50%; background:#C4C7CC; margin-right:6px; display:inline-block; }
+  #status-dot.live{ background:#2FBF71; }
+
+  /* body */
+  #thread{ flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:8px; }
+  .bubble{
+    max-width:78%; padding:7px 10px; border-radius:10px; font-size:13px; line-height:1.4;
+    box-shadow:0 1px 1px rgba(0,0,0,0.05); position:relative; white-space:pre-wrap; word-break:break-word;
+  }
+  .bubble.in{ align-self:flex-start; background:var(--bubble-in); border:1px solid var(--line); border-top-left-radius:2px; }
+  .bubble.out{ align-self:flex-end; background:var(--wa-green-light); border-top-right-radius:2px; }
+  .bubble .meta{ display:block; margin-top:3px; font-size:10px; color:var(--ink-soft); text-align:right; }
+  .ticks{ margin-left:3px; font-size:11px; letter-spacing:-1px; }
+  .ticks.sent{ color:var(--ink-soft); }
+  .ticks.delivered{ color:var(--ink-soft); }
+  .ticks.read{ color:#34B7F1; }
+  .bubble.failed{ border-color:var(--danger); }
+  .bubble.failed .meta{ color:var(--danger); }
+  .bubble-text{ white-space:pre-wrap; }
+
+  .react-trigger{
+    position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%;
+    background:#fff; border:1px solid var(--line); font-size:11px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; opacity:0.55;
+  }
+  .react-trigger:hover{ opacity:1; }
+
+  .reaction-badge{
+    position:absolute; bottom:-10px; left:8px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:1px 5px; font-size:11px; box-shadow:0 1px 1px rgba(0,0,0,0.08);
+  }
+  .bubble.out .reaction-badge{ left:auto; right:8px; }
+
+  .reaction-picker{
+    position:absolute; top:-34px; right:-6px; background:#fff; border:1px solid var(--line);
+    border-radius:20px; padding:3px 5px; display:flex; gap:2px; box-shadow:0 2px 6px rgba(0,0,0,0.15);
+    z-index:5;
+  }
+  .reaction-picker button{
+    border:none; background:none; font-size:16px; padding:2px 4px; cursor:pointer; border-radius:50%;
+  }
+  .reaction-picker button:hover, .reaction-picker button.active{ background:var(--bg); }
+
+  .attachment-box{
+    margin-bottom:4px; font-size:11.5px; color:var(--ink-soft);
+    display:flex; align-items:center; gap:6px;
+  }
+  .attachment-file-link{
+    display:inline-block; color:var(--wa-green); text-decoration:underline; font-size:12.5px;
+  }
+  .attachment-copy-btn{
+    border:none; background:none; cursor:pointer; font-size:13px; padding:2px 4px; line-height:1;
+    border-radius:4px; flex-shrink:0;
+  }
+  .attachment-copy-btn:hover{ background:rgba(0,0,0,0.06); }
+
+  .day-sep{ align-self:center; font-size:10.5px; color:var(--ink-soft); background:#EDEFF2; padding:2px 8px; border-radius:8px; margin:4px 0; }
+
+  #empty, #loading, #error{
+    margin:auto; text-align:center; color:var(--ink-soft); font-size:13px; padding:20px; max-width:280px;
+  }
+  #error{ color:var(--danger); }
+  #loading .spinner{
+    width:22px; height:22px; border:2.5px solid var(--line); border-top-color:var(--wa-green);
+    border-radius:50%; margin:0 auto 10px; animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* cold-start template panel */
+  #cold-start{ padding:14px; border-top:1px solid var(--line); background:#fff; }
+  #cold-start p{ font-size:12px; color:var(--ink-soft); margin:0 0 8px; }
+  #cold-start input, #tpl-select{
+    width:100%; padding:8px; font-size:12.5px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px;
+    background:#fff; font-family:inherit;
+  }
+  #cold-start button{
+    width:100%; padding:8px; font-size:12.5px; font-weight:600; color:#fff; background:var(--wa-green);
+    border:none; border-radius:6px; cursor:pointer;
+  }
+  #cold-start button:disabled{ opacity:0.5; cursor:default; }
+
+  #tpl-preview{
+    background:var(--wa-green-light); border:1px solid var(--line); border-radius:8px;
+    padding:8px 10px; font-size:12.5px; line-height:1.45; white-space:pre-wrap; margin-bottom:8px;
+  }
+  #tpl-preview .var{ background:#fff3b0; border-radius:3px; padding:0 2px; }
+  #tpl-preview .var.empty{ background:#f3d4d4; }
+
+  .tpl-param-row{ margin-bottom:6px; }
+  .tpl-param-row label{ display:block; font-size:10.5px; color:var(--ink-soft); margin-bottom:2px; }
+  .tpl-param-select{
+    width:100%; padding:5px 6px; font-size:11px; border:1px solid var(--line); border-radius:6px;
+    margin-bottom:3px; background:#fff; color:var(--ink-soft); font-family:inherit;
+  }
+  .tpl-param-row input{
+    width:100%; padding:6px 8px; font-size:12px; border:1px solid var(--line); border-radius:6px;
+  }
+
+  #template-toggle{ padding:6px 12px; background:#fff; border-top:1px solid var(--line); }
+  #template-toggle-btn{
+    border:none; background:none; color:var(--wa-green); font-size:11.5px; cursor:pointer; padding:2px 0;
+    text-decoration:underline;
+  }
+
+  /* composer */
+  #composer{
+    display:flex; align-items:flex-end; gap:8px; padding:10px 12px; background:#fff; border-top:1px solid var(--line); flex-shrink:0;
+  }
+  #composer textarea{
+    flex:1; resize:none; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px;
+    font-family:inherit; max-height:90px; min-height:36px;
+  }
+  #composer button{
+    background:var(--wa-green); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:12.5px;
+    font-weight:600; cursor:pointer; flex-shrink:0;
+  }
+  #composer button:disabled{ opacity:0.5; cursor:default; }
+  #attach-btn{
+    background:none !important; color:var(--ink-soft) !important; font-size:18px; padding:4px 6px !important;
+    line-height:1;
+  }
+  #record-btn{
+    background:none !important; color:var(--ink-soft) !important; font-size:18px; padding:4px 6px !important;
+    line-height:1;
+  }
+  #record-btn.recording{
+    color:var(--danger) !important;
+    animation:pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+  #upload-status{
+    font-size:10.5px; color:var(--ink-soft); padding:0 12px 6px; background:#fff;
+  }
+  #window-note{ font-size:10.5px; color:var(--ink-soft); padding:0 12px 8px; background:#fff; }
+
+  #reply-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:6px 12px; background:#f0f0f0; border-top:1px solid var(--line); font-size:11.5px;
+  }
+  #reply-banner-text{ color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #reply-banner-cancel{
+    border:none; background:none; cursor:pointer; font-size:12px; color:var(--ink-soft); flex-shrink:0;
+  }
+  .reply-trigger{
+    position:absolute; top:-6px; left:-6px; width:20px; height:20px; border-radius:50%;
+    background:#fff; border:1px solid var(--line); font-size:10px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; opacity:0.55;
+  }
+  .reply-trigger:hover{ opacity:1; }
+
+  .quoted-reply{
+    border-left:3px solid var(--wa-green); background:rgba(0,0,0,0.04); border-radius:4px;
+    padding:3px 6px; margin-bottom:4px; font-size:11px; color:var(--ink-soft);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div class="who">
+      <div class="name"><span id="status-dot"></span><span id="lead-name">Loading…</span></div>
+      <div class="num" id="lead-number">—</div>
+    </div>
+  </div>
+
+  <div id="thread"></div>
+  <div id="loading"><div class="spinner"></div>Loading conversation…</div>
+  <div id="empty" style="display:none"></div>
+  <div id="error" style="display:none"></div>
+
+  <div id="template-toggle" style="display:none">
+    <button id="template-toggle-btn" type="button">Send a template message</button>
+  </div>
+
+  <div id="cold-start" style="display:none">
+    <p id="cold-start-text">No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.</p>
+    <select id="tpl-select"><option value="">Loading templates…</option></select>
+    <div id="tpl-preview" style="display:none"></div>
+    <div id="tpl-params-container"></div>
+    <button id="tpl-send" disabled>Select a template</button>
+  </div>
+
+  <div id="reply-banner" style="display:none">
+    <div id="reply-banner-text"></div>
+    <button id="reply-banner-cancel" type="button">✕</button>
+  </div>
+  <div id="window-note" style="display:none"></div>
+  <div id="composer" style="display:none">
+    <button id="attach-btn" type="button" title="Attach image, video, or document">📎</button>
+    <input id="file-input" type="file" accept="image/*,video/*,application/pdf" style="display:none" />
+    <button id="record-btn" type="button" title="Record a voice message">🎤</button>
+    <textarea id="msg-box" placeholder="Type a reply…" rows="1"></textarea>
+    <button id="send-btn">Send</button>
+  </div>
+  <div id="upload-status" style="display:none"></div>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIG — things you'll likely want to change
+   ========================================================================= */
+var CONFIG = {
+  // Name of the Zoho CRM Connection you create for Zernio (Setup > Developer
+  // Space > Connections). The connection stores the Zernio API key so it
+  // never has to live in this client-side file.
+  ZOHO_CONNECTION_NAME: "zernio",
+
+  // Zernio's API base (see docs.zernio.com — Base URL).
+  ZERNIO_BASE_URL: "https://zernio.com/api/v1",
+
+  // REQUIRED when the connected Zernio account has more than one WhatsApp
+  // number on it. This widget will only ever show/send on conversations
+  // belonging to this exact account — a search hit belonging to a
+  // different client's WhatsApp number is discarded, not just deprioritized.
+  // Get this from Zernio's GET /v1/accounts (the _id field for the account
+  // this specific module/client should use).
+  ZERNIO_ACCOUNT_ID: "6a45af179d9472faae496281",
+
+  // CRM fields (on this module) to try, in order, when looking for a
+  // WhatsApp number for this record.
+  PHONE_FIELDS: ["Mobile", "Phone"],
+
+  // CRM fields to try, in order, for the record's display name in the
+  // header. Full_Name/Last_Name/Company/Account_Name are standard-module
+  // fields (Leads, Contacts, etc) — custom modules usually won't have
+  // these and need their own field added here (often just "Name").
+  NAME_FIELDS: ["Full_Name", "Last_Name", "Company", "Account_Name", "Name"],
+
+  // How often to poll for new messages while the panel is open (ms).
+  POLL_INTERVAL_MS: 6000,
+
+  // Your Apps Script /exec URL (same one used for the webhook and for
+  // External Hosting) — used ONLY for media uploads, since those need to
+  // send raw file bytes that ZOHO.CRM.CONNECTION.invoke isn't built for.
+  // Same URL for every client's widget, since Code.gs is one shared backend.
+  APPS_SCRIPT_EXEC_URL: "https://script.google.com/macros/s/AKfycbz_8z2B0aDQNXgGdJUTsfGi7VdjYB9_TNU0cr0gd2fH_75HwGDTHg_vTlpeFvRY5XqEtg/exec"
+};
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+var state = {
+  entity: null,        // "Leads" | "Contacts" | ...
+  recordId: null,
+  record: null,          // full record fetched via ZOHO.CRM.API.getRecord, used for the field-picker dropdown
+  replyTo: null,          // { id, preview } when composing a reply to a specific message
+  phone: null,          // normalized, digits only, no plus/spaces
+  conversationId: null,
+  accountId: null,       // Zernio's WhatsApp account id for this conversation
+  lastMessageAt: null,
+  pollTimer: null
+};
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* =========================================================================
+   PHONE NORMALIZATION
+   Zernio expects/returns phone numbers roughly in international format.
+   Zoho lead phone fields are freeform text, so this is a best-effort
+   normalization — adjust to match how your org actually enters numbers.
+   ========================================================================= */
+function normalizePhone(raw){
+  if(!raw) return null;
+  var digits = String(raw).replace(/[^\d]/g, "");
+  // If it looks like a 10-digit local Indian number with no country code,
+  // assume +91. Change / remove this default for your own market.
+  if(digits.length === 10) digits = "91" + digits;
+  return digits;
+}
+
+/* =========================================================================
+   ZERNIO CALLS — all routed through the Zoho Connection so the API key
+   never touches this file or the browser's network tab in plaintext.
+   ========================================================================= */
+function zernioRequest(path, method, params){
+  var httpMethod = method || "GET";
+  var req = {
+    url: CONFIG.ZERNIO_BASE_URL + path,
+    method: httpMethod,
+    // Zoho's Connection.invoke needs to be told where params go:
+    // 1 = query string (right for our GET calls), 2 = JSON body (right for POST).
+    param_type: (httpMethod === "GET" || httpMethod === "DELETE") ? 1 : 2
+  };
+  if(params) req.parameters = params;
+  return ZOHO.CRM.CONNECTION.invoke(CONFIG.ZOHO_CONNECTION_NAME, req).then(function(resp){
+    // Zoho wraps the third-party response; the raw body comes back nested
+    // under details.statusMessage (confirmed by direct console testing).
+    var body = resp && resp.details ? resp.details.statusMessage : resp;
+    if(typeof body === "string"){
+      try{ body = JSON.parse(body); }catch(e){ /* leave as string */ }
+    }
+    return body;
+  });
+}
+
+function findConversation(phone){
+  return zernioRequest("/inbox/conversations/search", "GET", {
+    query: phone,
+    platform: "whatsapp",
+    limit: 5
+  }).then(function(body){
+    var hits = (body && body.data) || [];
+    // Only ever accept a match belonging to THIS client's WhatsApp account —
+    // in a multi-client setup sharing one Zernio account, a search can
+    // return hits from other clients' numbers too, which must never surface
+    // here even if they'd otherwise look like a valid match.
+    var match = hits.find(function(h){
+      return h.conversation &&
+        String(h.conversation.id) &&
+        h.conversation.accountId === CONFIG.ZERNIO_ACCOUNT_ID;
+    });
+    return match ? match.conversation : null;
+  });
+}
+
+function fetchMessages(conversationId, accountId){
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "GET", {
+    accountId: accountId
+  }).then(function(body){ return (body && body.messages) || []; });
+}
+
+function sendReaction(messageId, emoji){
+  return zernioRequest(
+    "/inbox/conversations/" + state.conversationId + "/messages/" + messageId + "/reactions",
+    "POST",
+    { accountId: CONFIG.ZERNIO_ACCOUNT_ID, emoji: emoji }
+  );
+}
+
+function removeReaction(messageId){
+  return zernioRequest(
+    "/inbox/conversations/" + state.conversationId + "/messages/" + messageId + "/reactions",
+    "DELETE",
+    { accountId: CONFIG.ZERNIO_ACCOUNT_ID }
+  );
+}
+
+function sendMessage(conversationId, accountId, text, attachment, replyTo){
+  var params = { accountId: accountId, message: text || "" };
+  if(attachment){
+    params.attachmentUrl = attachment.url;
+    params.attachmentType = attachment.type;
+  }
+  if(replyTo){
+    params.replyTo = replyTo;
+  }
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", params);
+}
+
+// Uploads bypass ZOHO.CRM.CONNECTION.invoke entirely (that's built for
+// JSON/query parameters, not file bytes) and go straight to the Apps
+// Script backend instead, which relays them to Zernio using its own
+// server-side copy of the API key. Content-Type is deliberately
+// text/plain, not application/json — Apps Script Web Apps can't handle
+// the CORS preflight a real application/json POST would trigger, but the
+// body is still valid JSON underneath; doPost already parses it that way.
+function uploadMedia(file){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error("Couldn't read the file")); };
+    reader.onload = function(){
+      var base64 = reader.result.split(",")[1]; // strip the data:mime;base64, prefix
+      fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=uploadMedia", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ fileBase64: base64, mimeType: file.type, filename: file.name || "recording" })
+      })
+        .then(function(res){ return res.json(); })
+        .then(function(json){
+          if(json.zernioStatus !== 200 && json.zernioStatus !== 201){
+            return reject(new Error("Upload failed: " + JSON.stringify(json.zernioBody)));
+          }
+          // Response shape from Zernio's own upload endpoint hasn't been
+          // exercised in production yet — checking a couple of likely
+          // field names rather than assuming one, and surfacing the raw
+          // body in the error if neither matches so it's debuggable
+          // instead of silently failing.
+          var url = json.zernioBody && (json.zernioBody.publicUrl || json.zernioBody.url);
+          if(!url) return reject(new Error("No URL in upload response: " + JSON.stringify(json.zernioBody)));
+          resolve(url);
+        })
+        .catch(reject);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function attachmentTypeFor(mimeType){
+  if(mimeType.indexOf("image/") === 0) return "image";
+  if(mimeType.indexOf("video/") === 0) return "video";
+  if(mimeType.indexOf("audio/") === 0) return "audio";
+  return "document";
+}
+
+// Inbound media (from the customer) comes back from Zernio as a relative,
+// authenticated path — can't go straight in an <img src>, since the
+// browser has no way to attach the Bearer token that path needs. The
+// attachment link points directly at the Apps Script fetchMedia endpoint
+// instead, which does the authenticated fetch server-side. Outbound media
+// (things we sent) is already a plain public URL and skips this entirely.
+
+function sendTemplateStart(phone, accountId, templateName, templateLanguage, params){
+  return zernioRequest("/inbox/conversations", "POST", {
+    accountId: accountId,
+    participantId: phone,
+    platform: "whatsapp",
+    templateName: templateName,
+    templateLanguage: templateLanguage,
+    templateParams: params
+  });
+}
+
+function fetchTemplates(){
+  return zernioRequest("/whatsapp/templates", "GET", { accountId: CONFIG.ZERNIO_ACCOUNT_ID })
+    .then(function(body){
+      var all = (body && body.templates) || [];
+      // Only approved templates are actually sendable — PENDING/REJECTED
+      // ones would just fail, so no point offering them.
+      return all.filter(function(t){ return t.status === "APPROVED"; });
+    });
+}
+
+/* =========================================================================
+   RENDERING
+   ========================================================================= */
+function fmtTime(ts){
+  try{
+    var d = new Date(ts);
+    return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  }catch(e){ return ""; }
+}
+
+// Only shows on our own sent messages (WhatsApp doesn't show delivery
+// ticks on the customer's messages, only on the business's). "failed" is
+// already covered by the separate "· failed" text, so skipped here to
+// avoid showing both. The exact status string for "sent but not yet
+// delivered" hasn't come up in a real payload we've seen — only
+// "delivered", "read", and "failed" have — so anything else falls back
+// to a single tick, matching WhatsApp's own convention for that state.
+function tickMarkFor(m, dir){
+  if(dir !== "out") return null;
+  if(m.deliveryStatus === "failed") return null;
+  var span = document.createElement("span");
+  span.className = "ticks " + (m.deliveryStatus === "read" ? "read" : m.deliveryStatus === "delivered" ? "delivered" : "sent");
+  span.textContent = (m.deliveryStatus === "read" || m.deliveryStatus === "delivered") ? "✓✓" : "✓";
+  return span;
+}
+
+function labelFor(type){
+  if(type === "image") return "🖼 Open image";
+  if(type === "video") return "🎬 Open video";
+  if(type === "audio") return "🔊 Open audio";
+  return "📄 Open document";
+}
+
+function copyAttachmentLink(url, btn){
+  var original = btn.textContent;
+  function showCopied(){
+    btn.textContent = "✓";
+    setTimeout(function(){ btn.textContent = original; }, 1500);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(showCopied).catch(function(){
+      // Some embedded WebViews block the Clipboard API outright — fall
+      // back to a native prompt() dialog, whose text field can still be
+      // long-pressed and copied manually even where scripted clipboard
+      // access is blocked.
+      prompt("Copy this link and paste it into your phone's browser:", url);
+    });
+  } else {
+    prompt("Copy this link and paste it into your phone's browser:", url);
+  }
+}
+
+function renderAttachmentInto(container, attachment){
+  var isAbsolute = /^https?:\/\//.test(attachment.url || "");
+  var href = isAbsolute
+    ? attachment.url
+    : CONFIG.APPS_SCRIPT_EXEC_URL + "?action=fetchMedia&path=" + encodeURIComponent(attachment.url);
+
+  var box = document.createElement("div");
+  box.className = "attachment-box";
+
+  var link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.className = "attachment-file-link";
+  link.textContent = labelFor(attachment.type);
+  box.appendChild(link);
+
+  // Tapping this link fails inside some embedded app WebViews (Google
+  // blocks its own domains from loading inside them, as a phishing
+  // protection — nothing wrong on our end). Copy-and-paste into a real
+  // browser sidesteps that entirely, since it's no longer an in-app
+  // navigation once pasted somewhere else.
+  var copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "attachment-copy-btn";
+  copyBtn.textContent = "📋";
+  copyBtn.title = "Copy link — use this if tapping doesn't open it";
+  copyBtn.addEventListener("click", function(e){
+    e.preventDefault();
+    copyAttachmentLink(href, copyBtn);
+  });
+  box.appendChild(copyBtn);
+
+  container.appendChild(box);
+}
+
+var QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function toggleReactionPicker(bubbleEl, message){
+  var existing = bubbleEl.querySelector(".reaction-picker");
+  if(existing){ existing.remove(); return; }
+
+  var picker = document.createElement("div");
+  picker.className = "reaction-picker";
+  var myReaction = (message.reactions || []).find(function(r){ return r.fromMe; });
+
+  QUICK_REACTIONS.forEach(function(emoji){
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = emoji;
+    if(myReaction && myReaction.emoji === emoji) btn.classList.add("active");
+    btn.addEventListener("click", function(){
+      picker.remove();
+      var action = (myReaction && myReaction.emoji === emoji)
+        ? removeReaction(message.id)
+        : sendReaction(message.id, emoji);
+      action.then(refreshMessages).catch(function(err){ console.error(err); });
+    });
+    picker.appendChild(btn);
+  });
+  bubbleEl.appendChild(picker);
+}
+
+// Short one-line summary of a message, used both for the reply banner and
+// for rendering a quoted-reply strip on messages that reference another.
+function previewFor(message){
+  if(!message) return "a message";
+  var text = message.text || message.message;
+  if(text) return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  if(message.attachments && message.attachments.length) return labelFor(message.attachments[0].type);
+  return "a message";
+}
+
+function startReplyTo(message){
+  state.replyTo = { id: message.id, preview: previewFor(message) };
+  $("reply-banner-text").textContent = "Replying to: " + state.replyTo.preview;
+  $("reply-banner").style.display = "flex";
+  $("msg-box").focus();
+}
+
+function renderThread(messages){
+  var thread = $("thread");
+  thread.innerHTML = "";
+  if(!messages.length){
+    $("loading").style.display = "none";
+    $("empty").style.display = "block";
+    $("empty").textContent = "No messages yet.";
+    return;
+  }
+  $("loading").style.display = "none";
+  $("empty").style.display = "none";
+
+  var byId = {};
+  messages.forEach(function(m){ byId[m.id] = m; });
+
+  var lastDay = null;
+  messages
+    .slice()
+    .sort(function(a,b){ return new Date(a.timestamp || a.createdAt) - new Date(b.timestamp || b.createdAt); })
+    .forEach(function(m){
+      var ts = m.timestamp || m.createdAt;
+      var day = ts ? new Date(ts).toDateString() : "";
+      if(day && day !== lastDay){
+        var sep = document.createElement("div");
+        sep.className = "day-sep";
+        sep.textContent = day;
+        thread.appendChild(sep);
+        lastDay = day;
+      }
+      var b = document.createElement("div");
+      var dir = m.direction === "outgoing" || m.direction === "out" ? "out" : "in";
+      b.className = "bubble " + dir + (m.deliveryStatus === "failed" ? " failed" : "");
+      b.style.position = "relative";
+
+      var quotedId = m.metadata && m.metadata.quotedMessageId;
+      if(quotedId){
+        var quoteEl = document.createElement("div");
+        quoteEl.className = "quoted-reply";
+        quoteEl.textContent = previewFor(byId[quotedId]);
+        b.appendChild(quoteEl);
+      }
+
+      if(m.attachments && m.attachments.length){
+        renderAttachmentInto(b, m.attachments[0]);
+      }
+      var text = m.text || m.message || "";
+      if(text){
+        var textEl = document.createElement("div");
+        textEl.className = "bubble-text";
+        textEl.textContent = text;
+        b.appendChild(textEl);
+      }
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = fmtTime(ts) + (m.deliveryStatus === "failed" ? " · failed" : "");
+      var ticks = tickMarkFor(m, dir);
+      if(ticks) meta.appendChild(ticks);
+      b.appendChild(meta);
+
+      var replyBtn = document.createElement("button");
+      replyBtn.type = "button";
+      replyBtn.className = "reply-trigger";
+      replyBtn.textContent = "↩️";
+      replyBtn.title = "Reply";
+      replyBtn.addEventListener("click", function(){ startReplyTo(m); });
+      b.appendChild(replyBtn);
+
+      var reactBtn = document.createElement("button");
+      reactBtn.type = "button";
+      reactBtn.className = "react-trigger";
+      reactBtn.textContent = "🙂";
+      reactBtn.title = "React";
+      reactBtn.addEventListener("click", function(){ toggleReactionPicker(b, m); });
+      b.appendChild(reactBtn);
+
+      if(m.reactions && m.reactions.length){
+        var badge = document.createElement("div");
+        badge.className = "reaction-badge";
+        badge.textContent = m.reactions.map(function(r){ return r.emoji; }).join(" ");
+        b.appendChild(badge);
+      }
+
+      thread.appendChild(b);
+    });
+
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function showComposer(show){
+  $("composer").style.display = show ? "flex" : "none";
+  $("window-note").style.display = show ? "block" : "none";
+  if(show){
+    // Conversation exists — composer is the default view, but the template
+    // option stays one click away rather than disappearing entirely, since
+    // the conversation may be outside the 24-hour window even though it
+    // exists (free text would fail in that case, template wouldn't).
+    $("cold-start").style.display = "none";
+    $("template-toggle").style.display = "block";
+    $("template-toggle-btn").textContent = "Send a template message";
+    $("cold-start-text").textContent =
+      "If it's been a while since they last replied, WhatsApp may require a template instead of a plain message.";
+  } else {
+    // No conversation at all yet — template is the only option, so show it
+    // directly and there's no need for the separate toggle link.
+    $("cold-start").style.display = "block";
+    $("template-toggle").style.display = "none";
+    $("cold-start-text").textContent =
+      "No WhatsApp conversation with this number yet. WhatsApp requires an approved template to start one.";
+  }
+}
+
+/* =========================================================================
+   MAIN FLOW
+   ========================================================================= */
+function delay(ms){
+  return new Promise(function(resolve){ setTimeout(resolve, ms); });
+}
+
+// Right after sending a template to start a new conversation, Zernio may
+// not have finished indexing it yet — a single immediate search can come
+// back empty even though the send genuinely succeeded. Retry a few times
+// with short pauses before giving up, rather than the composer just
+// silently never opening until the customer happens to reply later.
+function findConversationWithRetry(phone, attemptsLeft){
+  attemptsLeft = attemptsLeft == null ? 5 : attemptsLeft;
+  return findConversation(phone).then(function(conv){
+    if(conv || attemptsLeft <= 1) return conv;
+    return delay(1500).then(function(){ return findConversationWithRetry(phone, attemptsLeft - 1); });
+  });
+}
+
+function loadConversationForPhone(phone, useRetry){
+  $("loading").style.display = "block";
+  $("error").style.display = "none";
+  var lookup = useRetry ? findConversationWithRetry(phone) : findConversation(phone);
+  return lookup.then(function(conv){
+    if(!conv){
+      state.conversationId = null;
+      $("loading").style.display = "none";
+      showComposer(false);
+      return;
+    }
+    state.conversationId = conv.id;
+    state.accountId = conv.accountId;
+    $("status-dot").classList.add("live");
+    return refreshMessages().then(function(){ showComposer(true); });
+  }).catch(function(err){
+    console.error(err);
+    $("loading").style.display = "none";
+    $("error").style.display = "block";
+    $("error").textContent = "Couldn't load WhatsApp conversation. Check the Zernio connection.";
+  });
+}
+
+function refreshMessages(){
+  if(!state.conversationId) return Promise.resolve();
+  return fetchMessages(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID).then(function(messages){
+    renderThread(messages);
+  });
+}
+
+function startPolling(){
+  if(state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(function(){
+    if(document.hidden) return;
+    refreshMessages();
+  }, CONFIG.POLL_INTERVAL_MS);
+}
+
+function initRecord(){
+  // Fired from inside PageLoad, so the SDK is definitely ready here —
+  // unlike a bare top-level call, which would race ZOHO.embeddedApp.init().
+  fetchTemplates()
+    .then(populateTemplateDropdown)
+    .catch(function(err){
+      console.error(err);
+      $("tpl-select").innerHTML = '<option value="">Couldn\'t load templates</option>';
+    });
+
+  ZOHO.CRM.API.getRecord({ Entity: state.entity, RecordID: state.recordId, approved: "both" })
+    .then(function(res){
+      var record = res.data && res.data[0];
+      if(!record){ throw new Error("Record not found"); }
+      state.record = record;
+      var name = CONFIG.NAME_FIELDS.map(function(f){ return record[f]; }).find(function(v){ return v; }) || "Lead";
+      $("lead-name").textContent = name;
+
+      var rawPhone = null;
+      CONFIG.PHONE_FIELDS.some(function(f){
+        if(record[f]){ rawPhone = record[f]; return true; }
+        return false;
+      });
+      var phone = normalizePhone(rawPhone);
+      state.phone = phone;
+      $("lead-number").textContent = rawPhone ? ("+" + phone) : "No phone number on this record";
+
+      if(!phone){
+        $("loading").style.display = "none";
+        $("empty").style.display = "block";
+        $("empty").textContent = "Add a phone number to this record to see WhatsApp messages.";
+        return;
+      }
+      return loadConversationForPhone(phone).then(startPolling);
+    })
+    .catch(function(err){
+      console.error(err);
+      $("loading").style.display = "none";
+      $("error").style.display = "block";
+      $("error").textContent = "Couldn't load this record.";
+    });
+}
+
+/* =========================================================================
+   EVENTS
+   ========================================================================= */
+$("attach-btn").addEventListener("click", function(){
+  $("file-input").click();
+});
+
+function uploadAndSendAttachment(file, uploadingLabel){
+  if(!file || !state.conversationId) return;
+  var status = $("upload-status");
+  status.style.display = "block";
+  status.textContent = uploadingLabel;
+  $("attach-btn").disabled = true;
+  $("record-btn").disabled = true;
+
+  return uploadMedia(file)
+    .then(function(url){
+      status.textContent = "Sending…";
+      return sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, "", {
+        url: url,
+        type: attachmentTypeFor(file.type)
+      });
+    })
+    .then(function(){
+      status.style.display = "none";
+      return refreshMessages();
+    })
+    .catch(function(err){
+      console.error(err);
+      status.textContent = "Couldn't send — " + err.message;
+    })
+    .finally(function(){
+      $("attach-btn").disabled = false;
+      $("record-btn").disabled = false;
+    });
+}
+
+$("file-input").addEventListener("change", function(){
+  var file = this.files[0];
+  this.value = ""; // reset so selecting the same file twice still fires 'change'
+  uploadAndSendAttachment(file, "Uploading " + file.name + "…");
+});
+
+/* =========================================================================
+   VOICE RECORDING
+   Sends as a plain audio attachment — not a native WhatsApp voice-note
+   bubble, which specifically requires an OGG/Opus file. Browsers'
+   MediaRecorder doesn't produce that container directly (real conversion
+   would be needed, not just a rename), so this is the simpler version:
+   record → upload → send, same pipeline as any other file. It'll show up
+   as a normal playable audio attachment on WhatsApp.
+   ========================================================================= */
+var mediaRecorder = null;
+var recordedChunks = [];
+var recordingTimerInterval = null;
+var recordingStartedAt = null;
+
+function startRecording(){
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+    recordedChunks = [];
+    var options = {};
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")){
+      options.mimeType = "audio/webm;codecs=opus";
+    }
+    mediaRecorder = new MediaRecorder(stream, options);
+
+    mediaRecorder.addEventListener("dataavailable", function(e){
+      if(e.data && e.data.size > 0) recordedChunks.push(e.data);
+    });
+
+    mediaRecorder.addEventListener("stop", function(){
+      stream.getTracks().forEach(function(t){ t.stop(); }); // release the mic
+      var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      uploadAndSendAttachment(blob, "Uploading voice message…");
+    });
+
+    mediaRecorder.start();
+    recordingStartedAt = Date.now();
+    $("record-btn").textContent = "⏹";
+    $("record-btn").classList.add("recording");
+    $("upload-status").style.display = "block";
+    recordingTimerInterval = setInterval(function(){
+      var secs = Math.floor((Date.now() - recordingStartedAt) / 1000);
+      var mm = Math.floor(secs / 60);
+      var ss = String(secs % 60).padStart(2, "0");
+      $("upload-status").textContent = "Recording… " + mm + ":" + ss;
+    }, 500);
+  }).catch(function(err){
+    console.error(err);
+    alert("Couldn't access the microphone: " + err.message);
+  });
+}
+
+function stopRecording(){
+  if(mediaRecorder && mediaRecorder.state !== "inactive"){
+    mediaRecorder.stop();
+  }
+  clearInterval(recordingTimerInterval);
+  $("record-btn").textContent = "🎤";
+  $("record-btn").classList.remove("recording");
+}
+
+$("record-btn").addEventListener("click", function(){
+  if(mediaRecorder && mediaRecorder.state === "recording"){
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+$("send-btn").addEventListener("click", function(){
+  var box = $("msg-box");
+  var text = box.value.trim();
+  if(!text || !state.conversationId) return;
+  $("send-btn").disabled = true;
+  var replyToId = state.replyTo && state.replyTo.id;
+  sendMessage(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID, text, null, replyToId)
+    .then(function(){
+      box.value = "";
+      state.replyTo = null;
+      $("reply-banner").style.display = "none";
+      return refreshMessages();
+    })
+    .catch(function(err){
+      console.error(err);
+      alert("Message failed to send — you may be outside the 24-hour reply window, which requires a template.");
+    })
+    .finally(function(){ $("send-btn").disabled = false; });
+});
+
+$("reply-banner-cancel").addEventListener("click", function(){
+  state.replyTo = null;
+  $("reply-banner").style.display = "none";
+});
+
+$("msg-box").addEventListener("keydown", function(e){
+  if(e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    $("send-btn").click();
+  }
+});
+
+$("template-toggle-btn").addEventListener("click", function(){
+  var isOpen = $("cold-start").style.display !== "none";
+  $("cold-start").style.display = isOpen ? "none" : "block";
+  $("template-toggle-btn").textContent = isOpen ? "Send a template message" : "Hide template form";
+});
+
+/* =========================================================================
+   TEMPLATE SELECTION, PREVIEW, AND DYNAMIC PARAM FIELDS
+   ========================================================================= */
+var TEMPLATES_BY_NAME = {};
+
+function escapeHtml(s){
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c];
+  });
+}
+
+function bodyComponentOf(template){
+  return (template.components || []).find(function(c){ return c.type === "BODY"; });
+}
+
+// Pulls the variable name hints Zernio/Meta provide (e.g. "riderName",
+// "orderID") so fields can be labeled meaningfully instead of just
+// "Variable 1", "Variable 2" — falls back to generic numbering if a
+// template doesn't have examples attached.
+function paramLabelsFor(template){
+  var body = bodyComponentOf(template);
+  if(!body) return [];
+  var count = (body.text.match(/\{\{\d+\}\}/g) || []).length;
+  var hints = body.example && body.example.body_text && body.example.body_text[0];
+  var labels = [];
+  for(var i = 0; i < count; i++){
+    labels.push(hints && hints[i] ? hints[i] : "Variable " + (i + 1));
+  }
+  return labels;
+}
+
+function renderTemplatePreview(template, values){
+  var body = bodyComponentOf(template);
+  var preview = $("tpl-preview");
+  if(!body){ preview.style.display = "none"; return; }
+  var html = escapeHtml(body.text).replace(/\{\{(\d+)\}\}/g, function(_, n){
+    var i = parseInt(n, 10) - 1;
+    var v = values[i];
+    return v ? '<span class="var">' + escapeHtml(v) + '</span>' : '<span class="var empty">{{' + n + '}}</span>';
+  });
+  preview.innerHTML = html.replace(/\n/g, "<br>");
+  preview.style.display = "block";
+}
+
+// Pulls flat, displayable fields off the currently loaded record for the
+// dropdown — skips Zoho's internal $-prefixed metadata fields, empty
+// values, and anything that isn't cleanly representable as plain text
+// (arrays, nested objects without a .name — e.g. subform data). Lookup
+// fields (Owner, related records) come back as {id, name, ...} objects,
+// so those use .name.
+function usableRecordFields(){
+  var record = state.record;
+  if(!record) return [];
+  return Object.keys(record)
+    .filter(function(key){ return key.indexOf("$") !== 0; })
+    .map(function(key){
+      var val = record[key];
+      if(val == null) return null;
+      if(typeof val === "string" || typeof val === "number"){
+        return { field: key, value: String(val) };
+      }
+      if(typeof val === "object" && !Array.isArray(val) && val.name){
+        return { field: key, value: String(val.name) };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort(function(a, b){ return a.field.localeCompare(b.field); });
+}
+
+function renderParamInputs(template){
+  var container = $("tpl-params-container");
+  container.innerHTML = "";
+  var labels = paramLabelsFor(template);
+  var fields = usableRecordFields();
+  var fieldOptions = '<option value="">— Pick a CRM field, or type below —</option>' +
+    fields.map(function(f){
+      return '<option value="' + escapeHtml(f.value) + '">' + escapeHtml(f.field) + ": " + escapeHtml(f.value) + '</option>';
+    }).join("");
+
+  labels.forEach(function(label, i){
+    var row = document.createElement("div");
+    row.className = "tpl-param-row";
+    var id = "tpl-param-" + i;
+    row.innerHTML =
+      '<label for="' + id + '">' + escapeHtml(label) + '</label>' +
+      '<select class="tpl-param-select" data-param-index="' + i + '">' + fieldOptions + '</select>' +
+      '<input id="' + id + '" data-param-index="' + i + '" placeholder="' + escapeHtml(label) + '">';
+    container.appendChild(row);
+  });
+  container.querySelectorAll(".tpl-param-select").forEach(function(select){
+    select.addEventListener("change", function(){
+      if(!this.value) return;
+      var idx = this.getAttribute("data-param-index");
+      $("tpl-param-" + idx).value = this.value;
+      updatePreviewFromInputs(template);
+    });
+  });
+  container.querySelectorAll("input").forEach(function(input){
+    input.addEventListener("input", function(){ updatePreviewFromInputs(template); });
+  });
+  updatePreviewFromInputs(template);
+}
+
+function currentParamValues(){
+  var inputs = Array.prototype.slice.call($("tpl-params-container").querySelectorAll("input"));
+  return inputs.map(function(i){ return i.value.trim(); });
+}
+
+function updatePreviewFromInputs(template){
+  renderTemplatePreview(template, currentParamValues());
+}
+
+function populateTemplateDropdown(templates){
+  TEMPLATES_BY_NAME = {};
+  var select = $("tpl-select");
+  select.innerHTML = "";
+  if(!templates.length){
+    select.innerHTML = '<option value="">No approved templates found</option>';
+    return;
+  }
+  select.innerHTML = '<option value="">Choose a template…</option>';
+  templates.forEach(function(t){
+    TEMPLATES_BY_NAME[t.name] = t;
+    var opt = document.createElement("option");
+    opt.value = t.name;
+    opt.textContent = t.name + " (" + t.category.toLowerCase() + ")";
+    select.appendChild(opt);
+  });
+}
+
+$("tpl-select").addEventListener("change", function(){
+  var template = TEMPLATES_BY_NAME[this.value];
+  if(!template){
+    $("tpl-preview").style.display = "none";
+    $("tpl-params-container").innerHTML = "";
+    $("tpl-send").disabled = true;
+    $("tpl-send").textContent = "Select a template";
+    return;
+  }
+  renderParamInputs(template);
+  $("tpl-send").disabled = false;
+  $("tpl-send").textContent = "Send template";
+});
+
+$("tpl-send").addEventListener("click", function(){
+  var template = TEMPLATES_BY_NAME[$("tpl-select").value];
+  if(!template || !state.phone) return;
+  var params = currentParamValues();
+  $("tpl-send").disabled = true;
+  $("tpl-send").textContent = "Sending…";
+  sendTemplateStart(state.phone, CONFIG.ZERNIO_ACCOUNT_ID, template.name, template.language, params)
+    .then(function(){
+      $("tpl-send").textContent = "Sent — opening chat…";
+      return loadConversationForPhone(state.phone, /* useRetry */ true);
+    })
+    .catch(function(err){
+      console.error(err);
+      alert("Couldn't send the template. Check it's still approved in Zernio.");
+    })
+    .finally(function(){
+      $("tpl-send").disabled = false;
+      $("tpl-send").textContent = "Send template";
+    });
+});
+
+$("lead-number").addEventListener("dblclick", function(){
+  var edited = prompt("Override the WhatsApp number used to search (digits, with country code):", state.phone || "");
+  if(edited){
+    state.phone = edited.replace(/[^\d]/g, "");
+    $("lead-number").textContent = "+" + state.phone;
+    loadConversationForPhone(state.phone).then(startPolling);
+  }
+});
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+ZOHO.embeddedApp.on("PageLoad", function(data){
+  state.entity = data.Entity;
+  state.recordId = data.EntityId;
+  initRecord();
+});
+ZOHO.embeddedApp.init();
+</script>
+</body>
+</html>
