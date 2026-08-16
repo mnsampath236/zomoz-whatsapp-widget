@@ -34,9 +34,14 @@
   .row.urgent{ border-color:var(--danger); background:#FFF6F5; }
   .row.soon{ border-color:var(--warn); background:#FFFAF0; }
 
-  .row-client{
-    font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
-    color:#fff; background:var(--wa-green); border-radius:5px; padding:3px 7px; flex-shrink:0;
+  .client-section{ margin-bottom:20px; }
+  .section-heading{
+    font-size:14px; font-weight:700; margin-bottom:8px; padding-bottom:4px;
+    border-bottom:2px solid var(--wa-green); color:var(--ink);
+  }
+  .section-empty{
+    font-size:12.5px; color:var(--ink-soft); padding:10px 14px; background:#fff;
+    border:1px solid var(--line); border-radius:10px;
   }
   .row-main{ flex:1; min-width:0; }
   .row-name{ font-size:13.5px; font-weight:600; }
@@ -166,79 +171,98 @@ function loadDashboard(){
       .then(function(convs){
         return Promise.all(convs.map(function(conv){
           return searchLead(client.module, conv.participantId).then(function(recordId){
-            return { client: client, conv: conv, recordId: recordId };
+            var item = { client: client, conv: conv, recordId: recordId };
+            item.hrs = hoursRemaining(item.conv);
+            return item;
           });
         }));
       })
+      .then(function(items){
+        items.sort(function(a, b){ return a.hrs - b.hrs; }); // most urgent first, within this client
+        return { client: client, items: items };
+      })
       .catch(function(err){
         console.error("Failed to load " + client.label + ":", err);
-        return [];
+        return { client: client, items: [] };
       });
   });
 
-  Promise.all(promises).then(function(results){
-    var items = [].concat.apply([], results);
-    items.forEach(function(item){ item.hrs = hoursRemaining(item.conv); });
-    items.sort(function(a, b){ return a.hrs - b.hrs; });
-    renderRows(items);
-  });
+  Promise.all(promises).then(renderSections);
 }
 
-function renderRows(items){
+function buildRow(item){
+  var cls = urgencyClass(item.hrs);
+  var row = document.createElement("div");
+  row.className = "row " + cls;
+
+  var main = document.createElement("div");
+  main.className = "row-main";
+  var name = document.createElement("div");
+  name.className = "row-name";
+  name.textContent = item.conv.participantName || item.conv.participantUsername || item.conv.participantId;
+  var preview = document.createElement("div");
+  preview.className = "row-preview";
+  preview.textContent = item.conv.lastMessage || "";
+  main.appendChild(name);
+  main.appendChild(preview);
+  row.appendChild(main);
+
+  var timer = document.createElement("div");
+  timer.className = "row-timer " + cls;
+  timer.textContent = formatRemaining(item.hrs);
+  row.appendChild(timer);
+
+  var link = document.createElement("a");
+  if(item.recordId){
+    link.href = CONFIG.ORG_DOMAIN + "/crm/org" + CONFIG.ORG_ID + "/tab/" +
+      item.client.urlSegment + "/" + item.recordId;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.className = "row-link";
+    link.textContent = "Open Lead →";
+  }else{
+    link.className = "row-link unmatched";
+    link.textContent = "Not in CRM";
+    link.href = "#";
+    link.addEventListener("click", function(e){ e.preventDefault(); });
+  }
+  row.appendChild(link);
+
+  return row;
+}
+
+function renderSections(sections){
   $("loading").style.display = "none";
   var container = $("rows");
   container.innerHTML = "";
 
-  if(!items.length){
+  var totalCount = sections.reduce(function(sum, s){ return sum + s.items.length; }, 0);
+  if(!totalCount){
     $("empty").style.display = "block";
     return;
   }
   $("empty").style.display = "none";
 
-  items.forEach(function(item){
-    var cls = urgencyClass(item.hrs);
-    var row = document.createElement("div");
-    row.className = "row " + cls;
+  // Stacked sections, all visible at once — no dropdown, no tab-click,
+  // no accordion. Each client's section is sorted by urgency internally.
+  sections.forEach(function(section){
+    var sectionEl = document.createElement("div");
+    sectionEl.className = "client-section";
 
-    var clientTag = document.createElement("div");
-    clientTag.className = "row-client";
-    clientTag.textContent = item.client.label;
-    row.appendChild(clientTag);
+    var heading = document.createElement("div");
+    heading.className = "section-heading";
+    heading.textContent = section.client.label + " (" + section.items.length + ")";
+    sectionEl.appendChild(heading);
 
-    var main = document.createElement("div");
-    main.className = "row-main";
-    var name = document.createElement("div");
-    name.className = "row-name";
-    name.textContent = item.conv.participantName || item.conv.participantUsername || item.conv.participantId;
-    var preview = document.createElement("div");
-    preview.className = "row-preview";
-    preview.textContent = item.conv.lastMessage || "";
-    main.appendChild(name);
-    main.appendChild(preview);
-    row.appendChild(main);
-
-    var timer = document.createElement("div");
-    timer.className = "row-timer " + cls;
-    timer.innerHTML = formatRemaining(item.hrs) + '<span class="sub">' + item.client.label + '</span>';
-    row.appendChild(timer);
-
-    var link = document.createElement("a");
-    if(item.recordId){
-      link.href = CONFIG.ORG_DOMAIN + "/crm/org" + CONFIG.ORG_ID + "/tab/" +
-        item.client.urlSegment + "/" + item.recordId;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.className = "row-link";
-      link.textContent = "Open Lead →";
+    if(!section.items.length){
+      var none = document.createElement("div");
+      none.className = "section-empty";
+      none.textContent = "All caught up";
+      sectionEl.appendChild(none);
     }else{
-      link.className = "row-link unmatched";
-      link.textContent = "Not in CRM";
-      link.href = "#";
-      link.addEventListener("click", function(e){ e.preventDefault(); });
+      section.items.forEach(function(item){ sectionEl.appendChild(buildRow(item)); });
     }
-    row.appendChild(link);
-
-    container.appendChild(row);
+    container.appendChild(sectionEl);
   });
 }
 
