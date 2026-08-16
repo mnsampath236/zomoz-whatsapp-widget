@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WhatsApp Inbox — All Clients</title>
+<script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+<style>
+  :root{
+    --wa-green: #128C7E;
+    --ink: #1F2328;
+    --ink-soft: #6B7280;
+    --line: #E5E7EB;
+    --bg: #F7F8FA;
+    --danger: #D64545;
+    --warn: #C98A0A;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color:var(--ink); background:var(--bg);
+  }
+  #app{ max-width:1000px; margin:0 auto; padding:20px; }
+  h1{ font-size:18px; margin:0 0 4px; }
+  #subtitle{ font-size:12.5px; color:var(--ink-soft); margin:0 0 18px; }
+
+  #empty{ text-align:center; color:var(--ink-soft); padding:60px 20px; font-size:14px; }
+  #error{ color:var(--danger); padding:12px; background:#fff; border-radius:8px; margin-bottom:12px; }
+
+  .row{
+    display:flex; align-items:center; gap:14px; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px; margin-bottom:8px;
+  }
+  .row.urgent{ border-color:var(--danger); background:#FFF6F5; }
+  .row.soon{ border-color:var(--warn); background:#FFFAF0; }
+
+  .row-client{
+    font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
+    color:#fff; background:var(--wa-green); border-radius:5px; padding:3px 7px; flex-shrink:0;
+  }
+  .row-main{ flex:1; min-width:0; }
+  .row-name{ font-size:13.5px; font-weight:600; }
+  .row-preview{
+    font-size:12px; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .row-timer{ font-size:12px; font-weight:600; flex-shrink:0; text-align:right; min-width:90px; }
+  .row-timer.urgent{ color:var(--danger); }
+  .row-timer.soon{ color:var(--warn); }
+  .row-timer.ok{ color:var(--ink-soft); }
+  .row-timer .sub{ display:block; font-size:10px; font-weight:400; color:var(--ink-soft); }
+
+  .row-link{
+    background:var(--wa-green); color:#fff; text-decoration:none; font-size:12px; font-weight:600;
+    padding:7px 12px; border-radius:6px; flex-shrink:0; white-space:nowrap;
+  }
+  .row-link.unmatched{ background:none; border:1px solid var(--line); color:var(--ink-soft); }
+
+  #loading{ text-align:center; color:var(--ink-soft); padding:40px; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>WhatsApp Inbox — All Clients</h1>
+  <div id="subtitle">Conversations with unread messages, most urgent first (24-hour reply window)</div>
+  <div id="error" style="display:none"></div>
+  <div id="loading">Loading…</div>
+  <div id="empty" style="display:none">Nothing needs attention right now — all caught up.</div>
+  <div id="rows"></div>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIG
+   ========================================================================= */
+var CONFIG = {
+  ZOHO_CONNECTION_NAME: "zernio",
+  ZERNIO_BASE_URL: "https://zernio.com/api/v1",
+  APPS_SCRIPT_EXEC_URL: "https://script.google.com/macros/s/AKfycbz_8z2B0aDQNXgGdJUTsfGi7VdjYB9_TNU0cr0gd2fH_75HwGDTHg_vTlpeFvRY5XqEtg/exec",
+
+  // Your Zoho CRM org — used to build direct links to each record.
+  ORG_DOMAIN: "https://crm.zoho.in",
+  ORG_ID: "60065333978",
+
+  // One entry per client. urlSegment is the internal URL identifier Zoho
+  // uses for that module in record links — NOT necessarily the API Name
+  // for custom modules (confirmed by checking a real record URL; e.g.
+  // Sharksports_lead's API Name but the URL uses "CustomModule1").
+  CLIENTS: [
+    { accountId: "6a7c18f977555aae01f0ec6b", module: "Leads", label: "Zomoz", urlSegment: "Leads" },
+    { accountId: "6a5898a53d50078def9bb17c", module: "Sharksports_lead", label: "Shark Sports", urlSegment: "CustomModule1" },
+    { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2" }
+  ],
+
+  POLL_INTERVAL_MS: 20000
+};
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* =========================================================================
+   ZERNIO — same pattern as the per-Lead widget, proven working
+   ========================================================================= */
+function zernioRequest(path, method, params){
+  var httpMethod = method || "GET";
+  var req = {
+    url: CONFIG.ZERNIO_BASE_URL + path,
+    method: httpMethod,
+    param_type: httpMethod === "GET" ? 1 : 2
+  };
+  if(params) req.parameters = params;
+  return ZOHO.CRM.CONNECTION.invoke(CONFIG.ZOHO_CONNECTION_NAME, req).then(function(resp){
+    var body = resp && resp.details ? resp.details.statusMessage : resp;
+    if(typeof body === "string"){
+      try{ body = JSON.parse(body); }catch(e){ /* leave as string */ }
+    }
+    return body;
+  });
+}
+
+function fetchUnreadConversations(client){
+  return zernioRequest("/inbox/conversations", "GET", {
+    accountId: client.accountId,
+    platform: "whatsapp",
+    limit: 50
+  }).then(function(body){
+    var all = (body && body.data) || [];
+    return all.filter(function(c){ return (c.unreadCount || 0) > 0; });
+  });
+}
+
+// Reuses the exact phone-search logic already proven in Code.gs, via the
+// small relay added there — not an unverified client-side SDK search call.
+function searchLead(module, phone){
+  var url = CONFIG.APPS_SCRIPT_EXEC_URL + "?action=searchLead&module=" + encodeURIComponent(module) +
+    "&phone=" + encodeURIComponent(phone);
+  return fetch(url).then(function(res){ return res.json(); }).then(function(json){ return json.id || null; });
+}
+
+/* =========================================================================
+   TIME REMAINING IN THE 24H WINDOW
+   ========================================================================= */
+function hoursRemaining(conv){
+  var last = new Date(conv.updatedTime || conv.lastMessageAt);
+  var elapsedMs = Date.now() - last.getTime();
+  var remainingMs = (24 * 60 * 60 * 1000) - elapsedMs;
+  return remainingMs / (60 * 60 * 1000);
+}
+
+function urgencyClass(hrs){
+  if(hrs <= 2) return "urgent";
+  if(hrs <= 6) return "soon";
+  return "ok";
+}
+
+function formatRemaining(hrs){
+  if(hrs <= 0) return "Window closed";
+  if(hrs < 1) return Math.round(hrs * 60) + " min left";
+  return hrs.toFixed(1) + " hrs left";
+}
+
+/* =========================================================================
+   LOAD + RENDER
+   ========================================================================= */
+function loadDashboard(){
+  var promises = CONFIG.CLIENTS.map(function(client){
+    return fetchUnreadConversations(client)
+      .then(function(convs){
+        return Promise.all(convs.map(function(conv){
+          return searchLead(client.module, conv.participantId).then(function(recordId){
+            return { client: client, conv: conv, recordId: recordId };
+          });
+        }));
+      })
+      .catch(function(err){
+        console.error("Failed to load " + client.label + ":", err);
+        return [];
+      });
+  });
+
+  Promise.all(promises).then(function(results){
+    var items = [].concat.apply([], results);
+    items.forEach(function(item){ item.hrs = hoursRemaining(item.conv); });
+    items.sort(function(a, b){ return a.hrs - b.hrs; });
+    renderRows(items);
+  });
+}
+
+function renderRows(items){
+  $("loading").style.display = "none";
+  var container = $("rows");
+  container.innerHTML = "";
+
+  if(!items.length){
+    $("empty").style.display = "block";
+    return;
+  }
+  $("empty").style.display = "none";
+
+  items.forEach(function(item){
+    var cls = urgencyClass(item.hrs);
+    var row = document.createElement("div");
+    row.className = "row " + cls;
+
+    var clientTag = document.createElement("div");
+    clientTag.className = "row-client";
+    clientTag.textContent = item.client.label;
+    row.appendChild(clientTag);
+
+    var main = document.createElement("div");
+    main.className = "row-main";
+    var name = document.createElement("div");
+    name.className = "row-name";
+    name.textContent = item.conv.participantName || item.conv.participantUsername || item.conv.participantId;
+    var preview = document.createElement("div");
+    preview.className = "row-preview";
+    preview.textContent = item.conv.lastMessage || "";
+    main.appendChild(name);
+    main.appendChild(preview);
+    row.appendChild(main);
+
+    var timer = document.createElement("div");
+    timer.className = "row-timer " + cls;
+    timer.innerHTML = formatRemaining(item.hrs) + '<span class="sub">' + item.client.label + '</span>';
+    row.appendChild(timer);
+
+    var link = document.createElement("a");
+    if(item.recordId){
+      link.href = CONFIG.ORG_DOMAIN + "/crm/org" + CONFIG.ORG_ID + "/tab/" +
+        item.client.urlSegment + "/" + item.recordId;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "row-link";
+      link.textContent = "Open Lead →";
+    }else{
+      link.className = "row-link unmatched";
+      link.textContent = "Not in CRM";
+      link.href = "#";
+      link.addEventListener("click", function(e){ e.preventDefault(); });
+    }
+    row.appendChild(link);
+
+    container.appendChild(row);
+  });
+}
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+ZOHO.embeddedApp.on("PageLoad", function(){
+  loadDashboard();
+  setInterval(loadDashboard, CONFIG.POLL_INTERVAL_MS);
+});
+ZOHO.embeddedApp.init();
+</script>
+</body>
+</html>
