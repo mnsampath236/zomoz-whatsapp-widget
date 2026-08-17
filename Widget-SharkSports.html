@@ -169,7 +169,10 @@
   #upload-status{
     font-size:10.5px; color:var(--ink-soft); padding:0 12px 6px; background:#fff;
   }
-  #window-note{ font-size:10.5px; color:var(--ink-soft); padding:0 12px 8px; background:#fff; }
+  #window-note{ font-size:11px; padding:6px 12px; background:#fff; font-weight:600; }
+  #window-note.ok{ color:var(--ink-soft); font-weight:400; }
+  #window-note.soon{ color:#C98A0A; }
+  #window-note.closed{ color:var(--danger); }
 
   #reply-banner{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -745,10 +748,42 @@ function loadConversationForPhone(phone, useRetry){
   });
 }
 
+// WhatsApp's 24-hour free-reply window resets specifically on the
+// customer's last INCOMING message — not on whatever the last message of
+// either direction happened to be — so this looks for that specifically
+// rather than just using the conversation's general "last activity" time.
+function updateWindowNote(messages){
+  var lastIncoming = messages
+    .filter(function(m){ return m.direction === "incoming" || m.direction === "in"; })
+    .sort(function(a, b){ return new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt); })[0];
+
+  var note = $("window-note");
+  if(!lastIncoming){
+    note.textContent = "";
+    return;
+  }
+  var last = new Date(lastIncoming.timestamp || lastIncoming.createdAt);
+  var hrsRemaining = 24 - (Date.now() - last.getTime()) / 3600000;
+
+  note.classList.remove("ok", "soon", "closed");
+  if(hrsRemaining <= 0){
+    note.textContent = "🔴 Reply window closed — send a template, not a plain message";
+    note.classList.add("closed");
+  }else if(hrsRemaining <= 2){
+    var mins = Math.round(hrsRemaining * 60);
+    note.textContent = "🟠 Reply window: " + mins + " min left — reply soon or use a template";
+    note.classList.add("soon");
+  }else{
+    note.textContent = "🟢 Reply window: " + hrsRemaining.toFixed(1) + " hrs left";
+    note.classList.add("ok");
+  }
+}
+
 function refreshMessages(){
   if(!state.conversationId) return Promise.resolve();
   return fetchMessages(state.conversationId, CONFIG.ZERNIO_ACCOUNT_ID).then(function(messages){
     renderThread(messages);
+    updateWindowNote(messages);
   });
 }
 
