@@ -22,7 +22,18 @@
   }
   #app{ max-width:1000px; margin:0 auto; padding:20px; }
   h1{ font-size:18px; margin:0 0 4px; }
-  #subtitle{ font-size:12.5px; color:var(--ink-soft); margin:0 0 18px; }
+  #controls{ display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+  #controls select{
+    padding:8px 10px; font-size:13px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; font-family:inherit;
+  }
+  #client-select{ font-weight:600; min-width:150px; }
+  #refresh-btn{
+    padding:8px 14px; font-size:13px; font-weight:600; border:1px solid var(--line); border-radius:8px;
+    background:#fff; cursor:pointer; font-family:inherit;
+  }
+  #refresh-btn:hover{ background:var(--bg); }
+  #refresh-btn:disabled{ opacity:0.5; cursor:default; }
 
   #empty{ text-align:center; color:var(--ink-soft); padding:60px 20px; font-size:14px; }
   #error{ color:var(--danger); padding:12px; background:#fff; border-radius:8px; margin-bottom:12px; }
@@ -65,11 +76,18 @@
 </head>
 <body>
 <div id="app">
-  <h1>WhatsApp Inbox — All Clients</h1>
-  <div id="subtitle">Conversations with unread messages, most urgent first (24-hour reply window)</div>
+  <h1>WhatsApp Inbox</h1>
+  <div id="controls">
+    <select id="client-select"></select>
+    <select id="time-filter">
+      <option value="all">All time</option>
+      <option value="today">Today</option>
+      <option value="3days">Last 3 days</option>
+    </select>
+    <button id="refresh-btn" type="button">🔄 Refresh</button>
+  </div>
   <div id="error" style="display:none"></div>
   <div id="loading">Loading…</div>
-  <div id="empty" style="display:none">Nothing needs attention right now — all caught up.</div>
   <div id="rows"></div>
 </div>
 
@@ -163,31 +181,59 @@ function formatRemaining(hrs){
 }
 
 /* =========================================================================
-   LOAD + RENDER
+   TIME FILTER
    ========================================================================= */
-function loadDashboard(){
-  var promises = CONFIG.CLIENTS.map(function(client){
-    return fetchUnreadConversations(client)
-      .then(function(convs){
-        return Promise.all(convs.map(function(conv){
-          return searchLead(client.module, conv.participantId).then(function(recordId){
-            var item = { client: client, conv: conv, recordId: recordId };
-            item.hrs = hoursRemaining(item.conv);
-            return item;
-          });
-        }));
-      })
-      .then(function(items){
-        items.sort(function(a, b){ return a.hrs - b.hrs; }); // most urgent first, within this client
-        return { client: client, items: items };
-      })
-      .catch(function(err){
-        console.error("Failed to load " + client.label + ":", err);
-        return { client: client, items: [] };
-      });
-  });
+function timeFilterCutoffMs(filterValue){
+  if(filterValue === "today"){
+    var midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return midnight.getTime();
+  }
+  if(filterValue === "3days") return Date.now() - (3 * 24 * 60 * 60 * 1000);
+  return 0; // "all" — no cutoff
+}
 
-  Promise.all(promises).then(renderSections);
+/* =========================================================================
+   LOAD + RENDER — one client at a time, picked via the dropdown
+   ========================================================================= */
+var currentClientIndex = 0;
+var currentRawItems = []; // last fetch for the current client, before time filtering
+
+function loadDashboard(){
+  var client = CONFIG.CLIENTS[currentClientIndex];
+  $("loading").style.display = "block";
+  $("error").style.display = "none";
+  $("refresh-btn").disabled = true;
+
+  fetchUnreadConversations(client)
+    .then(function(convs){
+      return Promise.all(convs.map(function(conv){
+        return searchLead(client.module, conv.participantId).then(function(recordId){
+          var item = { client: client, conv: conv, recordId: recordId };
+          item.hrs = hoursRemaining(item.conv);
+          item.updatedMs = new Date(item.conv.updatedTime || item.conv.lastMessageAt).getTime();
+          return item;
+        });
+      }));
+    })
+    .then(function(items){
+      currentRawItems = items;
+      applyFilterAndRender();
+    })
+    .catch(function(err){
+      console.error("Failed to load " + client.label + ":", err);
+      $("loading").style.display = "none";
+      $("error").style.display = "block";
+      $("error").textContent = "Couldn't load " + client.label + "'s conversations.";
+    })
+    .finally(function(){ $("refresh-btn").disabled = false; });
+}
+
+function applyFilterAndRender(){
+  var cutoff = timeFilterCutoffMs($("time-filter").value);
+  var filtered = currentRawItems.filter(function(item){ return item.updatedMs >= cutoff; });
+  filtered.sort(function(a, b){ return a.hrs - b.hrs; }); // most urgent first
+  renderList(filtered);
 }
 
 function buildRow(item){
@@ -231,45 +277,54 @@ function buildRow(item){
   return row;
 }
 
-function renderSections(sections){
+function renderList(items){
   $("loading").style.display = "none";
   var container = $("rows");
   container.innerHTML = "";
+  var client = CONFIG.CLIENTS[currentClientIndex];
 
-  var totalCount = sections.reduce(function(sum, s){ return sum + s.items.length; }, 0);
-  if(!totalCount){
-    $("empty").style.display = "block";
+  var heading = document.createElement("div");
+  heading.className = "section-heading";
+  heading.textContent = client.label + " (" + items.length + ")";
+  container.appendChild(heading);
+
+  if(!items.length){
+    var none = document.createElement("div");
+    none.className = "section-empty";
+    none.textContent = "All caught up";
+    container.appendChild(none);
     return;
   }
-  $("empty").style.display = "none";
+  items.forEach(function(item){ container.appendChild(buildRow(item)); });
+}
 
-  // Stacked sections, all visible at once — no dropdown, no tab-click,
-  // no accordion. Each client's section is sorted by urgency internally.
-  sections.forEach(function(section){
-    var sectionEl = document.createElement("div");
-    sectionEl.className = "client-section";
-
-    var heading = document.createElement("div");
-    heading.className = "section-heading";
-    heading.textContent = section.client.label + " (" + section.items.length + ")";
-    sectionEl.appendChild(heading);
-
-    if(!section.items.length){
-      var none = document.createElement("div");
-      none.className = "section-empty";
-      none.textContent = "All caught up";
-      sectionEl.appendChild(none);
-    }else{
-      section.items.forEach(function(item){ sectionEl.appendChild(buildRow(item)); });
-    }
-    container.appendChild(sectionEl);
+/* =========================================================================
+   CONTROLS
+   ========================================================================= */
+function populateClientDropdown(){
+  var select = $("client-select");
+  CONFIG.CLIENTS.forEach(function(client, i){
+    var opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = client.label;
+    select.appendChild(opt);
   });
 }
+
+$("client-select").addEventListener("change", function(){
+  currentClientIndex = parseInt(this.value, 10);
+  loadDashboard(); // switching brands fetches fresh data for that client
+});
+
+$("time-filter").addEventListener("change", applyFilterAndRender); // no re-fetch needed, just re-filter what's already loaded
+
+$("refresh-btn").addEventListener("click", loadDashboard);
 
 /* =========================================================================
    BOOT
    ========================================================================= */
 ZOHO.embeddedApp.on("PageLoad", function(){
+  populateClientDropdown();
   loadDashboard();
   setInterval(loadDashboard, CONFIG.POLL_INTERVAL_MS);
 });
