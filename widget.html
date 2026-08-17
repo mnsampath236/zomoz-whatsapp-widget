@@ -146,9 +146,9 @@ var CONFIG = {
   // for custom modules (confirmed by checking a real record URL; e.g.
   // Sharksports_lead's API Name but the URL uses "CustomModule1").
   CLIENTS: [
-    { accountId: "6a7c18f977555aae01f0ec6b", module: "Leads", label: "Zomoz", urlSegment: "Leads", nameField: "Full_Name" },
-    { accountId: "6a5898a53d50078def9bb17c", module: "Sharksports_lead", label: "Shark Sports", urlSegment: "CustomModule1", nameField: "Name" },
-    { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2", nameField: "Name" }
+    { accountId: "6a7c18f977555aae01f0ec6b", module: "Leads", label: "Zomoz", urlSegment: "Leads" },
+    { accountId: "6a5898a53d50078def9bb17c", module: "Sharksports_lead", label: "Shark Sports", urlSegment: "CustomModule1" },
+    { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2" }
   ],
 
   // Currently unused — auto-refresh is off, dashboard loads on open and via
@@ -193,16 +193,16 @@ function fetchUnreadConversations(client){
 
 // Reuses the exact phone-search logic already proven in Code.gs, via the
 // small relay added there — not an unverified client-side SDK search call.
-function searchLead(module, phone, nameField){
+function searchLead(module, phone){
   return fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=searchLead", {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ module: module, phone: phone, nameField: nameField })
+    body: JSON.stringify({ module: module, phone: phone })
   })
     .then(function(res){ return res.json(); })
     .then(function(json){
       if(json.error) console.error("searchLead error for " + phone + ":", json.error);
-      return { id: json.id || null, name: json.name || null };
+      return json.id || null;
     });
 }
 
@@ -277,12 +277,12 @@ function loadDashboard(){
       // now addresses the real cause, so there's no reason to stay slow.
       return Promise.all(convs.map(function(conv){
         return Promise.all([
-          searchLead(client.module, conv.participantId, client.nameField),
+          searchLead(client.module, conv.participantId),
           fetchThreadMessages(conv.id, client.accountId)
         ]).then(function(pair){
-          var leadMatch = pair[0];
+          var recordId = pair[0];
           var messages = pair[1];
-          var item = { client: client, conv: conv, recordId: leadMatch.id, crmName: leadMatch.name };
+          var item = { client: client, conv: conv, recordId: recordId };
           item.hrs = hoursRemainingFromMessages(messages);
           var lastIn = lastIncomingMessage(messages);
           item.updatedMs = lastIn
@@ -367,8 +367,7 @@ function buildRow(item){
   main.className = "row-main";
   var name = document.createElement("div");
   name.className = "row-name";
-  name.textContent = item.crmName || item.conv.participantName || item.conv.participantUsername ||
-    ("+" + item.conv.participantId); // normalized fallback if nothing better is available
+  name.textContent = item.conv.participantName || item.conv.participantUsername || item.conv.participantId;
   var preview = document.createElement("div");
   preview.className = "row-preview";
   preview.textContent = item.conv.lastMessage || "";
