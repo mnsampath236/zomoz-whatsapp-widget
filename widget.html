@@ -197,12 +197,27 @@ function searchLead(module, phone){
 
 /* =========================================================================
    TIME REMAINING IN THE 24H WINDOW
+   Fixed bug: this used to read conv.updatedTime, the conversation's
+   general last-activity timestamp — which shifts on ANY message, agent
+   included, so sending a template made the timer look like it just
+   reset even though it hadn't. Now finds the customer's actual last
+   incoming message specifically, which is what WhatsApp's rule is
+   really based on.
    ========================================================================= */
-function hoursRemaining(conv){
-  var last = new Date(conv.updatedTime || conv.lastMessageAt);
-  var elapsedMs = Date.now() - last.getTime();
-  var remainingMs = (24 * 60 * 60 * 1000) - elapsedMs;
-  return remainingMs / (60 * 60 * 1000);
+function lastIncomingMessage(messages){
+  return messages
+    .filter(function(m){ return m.direction === "incoming" || m.direction === "in"; })
+    .sort(function(a, b){
+      return new Date(b.createdAt || b.sentAt) - new Date(a.createdAt || a.sentAt);
+    })[0];
+}
+
+function hoursRemainingFromMessages(messages){
+  var last = lastIncomingMessage(messages);
+  if(!last) return 24; // no incoming message found at all — shouldn't normally happen for a flagged conversation
+  var lastMs = new Date(last.createdAt || last.sentAt).getTime();
+  var elapsedMs = Date.now() - lastMs;
+  return (24 * 60 * 60 * 1000 - elapsedMs) / (60 * 60 * 1000);
 }
 
 function urgencyClass(hrs){
@@ -245,10 +260,18 @@ function loadDashboard(){
   fetchUnreadConversations(client)
     .then(function(convs){
       return Promise.all(convs.map(function(conv){
-        return searchLead(client.module, conv.participantId).then(function(recordId){
+        return Promise.all([
+          searchLead(client.module, conv.participantId),
+          fetchThreadMessages(conv.id, client.accountId)
+        ]).then(function(results){
+          var recordId = results[0];
+          var messages = results[1];
           var item = { client: client, conv: conv, recordId: recordId };
-          item.hrs = hoursRemaining(item.conv);
-          item.updatedMs = new Date(item.conv.updatedTime || item.conv.lastMessageAt).getTime();
+          item.hrs = hoursRemainingFromMessages(messages);
+          var lastIn = lastIncomingMessage(messages);
+          item.updatedMs = lastIn
+            ? new Date(lastIn.createdAt || lastIn.sentAt).getTime()
+            : new Date(conv.updatedTime || conv.lastMessageAt).getTime(); // fallback only if no incoming message found
           return item;
         });
       }));
