@@ -38,12 +38,40 @@
   #empty{ text-align:center; color:var(--ink-soft); padding:60px 20px; font-size:14px; }
   #error{ color:var(--danger); padding:12px; background:#fff; border-radius:8px; margin-bottom:12px; }
 
+  .row-wrapper{ margin-bottom:8px; }
   .row{
     display:flex; align-items:center; gap:14px; background:#fff; border:1px solid var(--line);
-    border-radius:10px; padding:12px 14px; margin-bottom:8px;
+    border-radius:10px; padding:12px 14px;
   }
   .row.urgent{ border-color:var(--danger); background:#FFF6F5; }
   .row.soon{ border-color:var(--warn); background:#FFFAF0; }
+  .row-wrapper:has(.inline-thread) .row{ border-radius:10px 10px 0 0; border-bottom:none; }
+
+  .inline-thread{
+    border:1px solid var(--line); border-top:none; border-radius:0 0 10px 10px;
+    background:#fff; padding:10px 14px 12px;
+  }
+  .inline-thread-messages{
+    max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+    padding:8px; background:var(--bg); border-radius:8px; margin-bottom:6px;
+  }
+  .inline-bubble{
+    max-width:75%; padding:6px 9px; border-radius:8px; font-size:12.5px; line-height:1.4;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .inline-bubble.in{ align-self:flex-start; background:#fff; border:1px solid var(--line); }
+  .inline-bubble.out{ align-self:flex-end; background:#DCF8C6; }
+  .inline-thread-note{ font-size:10.5px; color:var(--ink-soft); margin-bottom:6px; }
+  .inline-thread-composer{ display:flex; gap:8px; }
+  .inline-thread-composer textarea{
+    flex:1; resize:none; border:1px solid var(--line); border-radius:8px; padding:7px 9px;
+    font-size:12.5px; font-family:inherit; min-height:34px;
+  }
+  .inline-thread-composer button{
+    background:var(--wa-green); color:#fff; border:none; border-radius:8px; padding:7px 14px;
+    font-size:12.5px; font-weight:600; cursor:pointer; flex-shrink:0;
+  }
+  .inline-thread-composer button:disabled{ opacity:0.5; cursor:default; }
 
   .client-section{ margin-bottom:20px; }
   .section-heading{
@@ -59,6 +87,15 @@
   .row-preview{
     font-size:12px; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  .contact-info{ display:flex; gap:8px; margin-top:5px; flex-wrap:wrap; }
+  .contact-chip{
+    display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft);
+    background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:2px 6px;
+  }
+  .contact-copy-btn{
+    border:none; background:none; cursor:pointer; font-size:11px; padding:0 2px; line-height:1;
+  }
+  .contact-copy-btn:hover{ opacity:0.7; }
   .row-timer{ font-size:12px; font-weight:600; flex-shrink:0; text-align:right; min-width:90px; }
   .row-timer.urgent{ color:var(--danger); }
   .row-timer.soon{ color:var(--warn); }
@@ -236,8 +273,54 @@ function applyFilterAndRender(){
   renderList(filtered);
 }
 
+// Same pattern as the attachment copy button in the per-Lead widget —
+// clipboard API first, falling back to a native prompt() dialog for
+// embedded WebViews that block scripted clipboard access outright.
+function copyToClipboard(text, btn){
+  var original = btn.textContent;
+  function showCopied(){
+    btn.textContent = "✓";
+    setTimeout(function(){ btn.textContent = original; }, 1200);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(showCopied).catch(function(){
+      prompt("Copy this value:", text);
+    });
+  }else{
+    prompt("Copy this value:", text);
+  }
+}
+
+// A "name" that's really just the phone number in disguise (common when
+// no real contact name was ever set) isn't worth showing as a separate
+// field — this checks whether the name is actually different from the
+// phone digits before deciding to display + offer it as its own chip.
+function isRealName(name, phoneDigits){
+  if(!name) return false;
+  return name.replace(/[^\d]/g, "") !== phoneDigits;
+}
+
+function buildContactChip(icon, value, copyLabel){
+  var chip = document.createElement("span");
+  chip.className = "contact-chip";
+  var text = document.createElement("span");
+  text.textContent = icon + " " + value;
+  chip.appendChild(text);
+  var btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "contact-copy-btn";
+  btn.textContent = "📋";
+  btn.title = "Copy " + copyLabel;
+  btn.addEventListener("click", function(){ copyToClipboard(value, btn); });
+  chip.appendChild(btn);
+  return chip;
+}
+
 function buildRow(item){
   var cls = urgencyClass(item.hrs);
+  var wrapper = document.createElement("div");
+  wrapper.className = "row-wrapper";
+
   var row = document.createElement("div");
   row.className = "row " + cls;
 
@@ -251,6 +334,18 @@ function buildRow(item){
   preview.textContent = item.conv.lastMessage || "";
   main.appendChild(name);
   main.appendChild(preview);
+
+  if(!item.recordId){
+    var contactInfo = document.createElement("div");
+    contactInfo.className = "contact-info";
+    var phone = "+" + item.conv.participantId;
+    contactInfo.appendChild(buildContactChip("📞", phone, "phone number"));
+    if(isRealName(item.conv.participantName, item.conv.participantId)){
+      contactInfo.appendChild(buildContactChip("👤", item.conv.participantName, "name"));
+    }
+    main.appendChild(contactInfo);
+  }
+
   row.appendChild(main);
 
   var timer = document.createElement("div");
@@ -268,13 +363,83 @@ function buildRow(item){
     link.textContent = "Open Lead →";
   }else{
     link.className = "row-link unmatched";
-    link.textContent = "Not in CRM";
+    link.textContent = "View & Reply";
     link.href = "#";
-    link.addEventListener("click", function(e){ e.preventDefault(); });
+    link.addEventListener("click", function(e){
+      e.preventDefault();
+      toggleInlineThread(item, wrapper);
+    });
   }
   row.appendChild(link);
+  wrapper.appendChild(row);
 
-  return row;
+  return wrapper;
+}
+
+function fetchThreadMessages(conversationId, accountId){
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "GET", { accountId: accountId })
+    .then(function(body){ return (body && body.messages) || []; });
+}
+
+function sendThreadMessage(conversationId, accountId, text){
+  return zernioRequest("/inbox/conversations/" + conversationId + "/messages", "POST", {
+    accountId: accountId, message: text
+  });
+}
+
+function toggleInlineThread(item, wrapper){
+  var existing = wrapper.querySelector(".inline-thread");
+  if(existing){ existing.remove(); return; }
+
+  var panel = document.createElement("div");
+  panel.className = "inline-thread";
+  panel.innerHTML =
+    '<div class="inline-thread-messages">Loading…</div>' +
+    '<div class="inline-thread-note">Quick replies only — outside the 24-hour window this needs a template, ' +
+    'which isn\'t available from this quick panel. Create the Lead in CRM for full template support.</div>' +
+    '<div class="inline-thread-composer">' +
+      '<textarea placeholder="Type a reply…" rows="1"></textarea>' +
+      '<button type="button">Send</button>' +
+    '</div>';
+  wrapper.appendChild(panel);
+
+  var messagesEl = panel.querySelector(".inline-thread-messages");
+  var textarea = panel.querySelector("textarea");
+  var sendBtn = panel.querySelector("button");
+
+  function loadThread(){
+    fetchThreadMessages(item.conv.id, item.client.accountId).then(function(messages){
+      messagesEl.innerHTML = "";
+      messages.slice(-15).forEach(function(m){ // most recent 15 — quick glance, not full history
+        var dir = (m.direction === "outgoing" || m.direction === "out") ? "out" : "in";
+        var b = document.createElement("div");
+        b.className = "inline-bubble " + dir;
+        b.textContent = m.text || m.message || (m.attachments && m.attachments.length ? "[attachment]" : "");
+        messagesEl.appendChild(b);
+      });
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }).catch(function(err){
+      console.error(err);
+      messagesEl.textContent = "Couldn't load messages.";
+    });
+  }
+  loadThread();
+
+  sendBtn.addEventListener("click", function(){
+    var text = textarea.value.trim();
+    if(!text) return;
+    sendBtn.disabled = true;
+    sendThreadMessage(item.conv.id, item.client.accountId, text)
+      .then(function(){
+        textarea.value = "";
+        return loadThread();
+      })
+      .catch(function(err){
+        console.error(err);
+        alert("Message failed to send — likely outside the 24-hour window, which needs a template (not supported in this quick-reply panel).");
+      })
+      .finally(function(){ sendBtn.disabled = false; });
+  });
 }
 
 function renderList(items){
