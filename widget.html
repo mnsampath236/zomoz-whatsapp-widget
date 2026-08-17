@@ -200,7 +200,10 @@ function searchLead(module, phone){
     body: JSON.stringify({ module: module, phone: phone })
   })
     .then(function(res){ return res.json(); })
-    .then(function(json){ return json.id || null; });
+    .then(function(json){
+      if(json.error) console.error("searchLead error for " + phone + ":", json.error);
+      return json.id || null;
+    });
 }
 
 /* =========================================================================
