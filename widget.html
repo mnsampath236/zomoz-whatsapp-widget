@@ -261,12 +261,15 @@ function timeFilterCutoffMs(filterValue){
    ========================================================================= */
 var currentClientIndex = 0;
 var currentRawItems = []; // last fetch for the current client, before time filtering
+var loadToken = 0; // guards against an older, slower-finishing load overwriting a newer one
 
 function loadDashboard(){
+  var thisLoad = ++loadToken;
   var client = CONFIG.CLIENTS[currentClientIndex];
   $("loading").style.display = "block";
   $("error").style.display = "none";
   $("refresh-btn").disabled = true;
+  $("client-select").disabled = true;
 
   fetchUnreadConversations(client)
     .then(function(convs){
@@ -293,16 +296,23 @@ function loadDashboard(){
       }));
     })
     .then(function(items){
+      if(thisLoad !== loadToken) return; // a newer load has since started — discard this now-stale result
       currentRawItems = items;
       applyFilterAndRender();
     })
     .catch(function(err){
+      if(thisLoad !== loadToken) return; // stale error from an old load — ignore it too
       console.error("Failed to load " + client.label + ":", err);
       $("loading").style.display = "none";
       $("error").style.display = "block";
       $("error").textContent = "Couldn't load " + client.label + "'s conversations.";
     })
-    .finally(function(){ $("refresh-btn").disabled = false; });
+    .finally(function(){
+      if(thisLoad === loadToken){
+        $("refresh-btn").disabled = false;
+        $("client-select").disabled = false;
+      }
+    });
 }
 
 function applyFilterAndRender(){
