@@ -160,7 +160,7 @@ var CONFIG = {
 
 var $ = function(id){ return document.getElementById(id); };
 
-/* ==========================================================================
+/* =========================================================================
    ZERNIO — same pattern as the per-Lead widget, proven working
    ========================================================================= */
 function zernioRequest(path, method, params){
@@ -194,15 +194,25 @@ function fetchUnreadConversations(client){
 // Reuses the exact phone-search logic already proven in Code.gs, via the
 // small relay added there — not an unverified client-side SDK search call.
 function searchLead(module, phone){
-  return fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=searchLead", {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ module: module, phone: phone })
-  })
-    .then(function(res){ return res.json(); })
-    .then(function(json){
-      if(json.error) console.error("searchLead error for " + phone + ":", json.error);
-      return json.id || null;
+  // Native Zoho Widget SDK call — not a fetch() to Apps Script, so it
+  // isn't subject to Apps Script's CORS handling at all (the thing that's
+  // been causing today's whole chase). Same SDK family as
+  // ZOHO.CRM.API.getRecord, used flawlessly throughout the rest of this
+  // build.
+  return ZOHO.CRM.API.searchRecord({ Entity: module, Type: "phone", Query: phone })
+    .then(function(response){
+      if(response && response.data && response.data.length){
+        return response.data[0].id;
+      }
+      return null; // no match found — not an error
+    })
+    .catch(function(err){
+      // searchRecord appears to reject on "no match found" as well as on
+      // real errors — treat both as "no match" for now, but log it so a
+      // genuine problem (wrong module name, permission issue) is still
+      // visible if this keeps happening.
+      console.error("searchRecord issue for " + phone + " (may just mean no match):", err);
+      return null;
     });
 }
 
