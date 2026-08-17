@@ -194,9 +194,13 @@ function fetchUnreadConversations(client){
 // Reuses the exact phone-search logic already proven in Code.gs, via the
 // small relay added there — not an unverified client-side SDK search call.
 function searchLead(module, phone){
-  var url = CONFIG.APPS_SCRIPT_EXEC_URL + "?action=searchLead&module=" + encodeURIComponent(module) +
-    "&phone=" + encodeURIComponent(phone);
-  return fetch(url).then(function(res){ return res.json(); }).then(function(json){ return json.id || null; });
+  return fetch(CONFIG.APPS_SCRIPT_EXEC_URL + "?action=searchLead", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ module: module, phone: phone })
+  })
+    .then(function(res){ return res.json(); })
+    .then(function(json){ return json.id || null; });
 }
 
 /* =========================================================================
