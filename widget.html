@@ -84,6 +84,12 @@
   }
   .row-main{ flex:1; min-width:0; }
   .row-name{ font-size:13.5px; font-weight:600; }
+  .status-badge{
+    display:inline-block; margin-left:7px; font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.02em; color:var(--wa-green); background:rgba(18,140,126,0.1); border-radius:5px;
+    padding:2px 6px; vertical-align:middle;
+  }
+  .status-badge.dead{ color:var(--danger); background:rgba(214,69,69,0.1); }
   .row-preview{
     font-size:12px; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
@@ -146,9 +152,9 @@ var CONFIG = {
   // for custom modules (confirmed by checking a real record URL; e.g.
   // Sharksports_lead's API Name but the URL uses "CustomModule1").
   CLIENTS: [
-    { accountId: "6a7c18f977555aae01f0ec6b", module: "Leads", label: "Zomoz", urlSegment: "Leads" },
-    { accountId: "6a5898a53d50078def9bb17c", module: "Sharksports_lead", label: "Shark Sports", urlSegment: "CustomModule1" },
-    { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2" }
+    { accountId: "6a7c18f977555aae01f0ec6b", module: "Leads", label: "Zomoz", urlSegment: "Leads", nameField: "Full_Name", statusField: "Lead_Status" },
+    { accountId: "6a5898a53d50078def9bb17c", module: "Sharksports_lead", label: "Shark Sports", urlSegment: "CustomModule1", nameField: "Name", statusField: "Lead_Statu" },
+    { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2", nameField: "Name", statusField: "Lead_Status" }
   ],
 
   // Currently unused — auto-refresh is off, dashboard loads on open and via
@@ -193,18 +199,23 @@ function fetchUnreadConversations(client){
 
 // Reuses the exact phone-search logic already proven in Code.gs, via the
 // small relay added there — not an unverified client-side SDK search call.
-function searchLead(module, phone){
+function searchLead(module, phone, nameField, statusField){
   // Native Zoho Widget SDK call — not a fetch() to Apps Script, so it
-  // isn't subject to Apps Script's CORS handling at all (the thing that's
-  // been causing today's whole chase). Same SDK family as
-  // ZOHO.CRM.API.getRecord, used flawlessly throughout the rest of this
-  // build.
+  // isn't subject to Apps Script's CORS handling at all (the thing that
+  // caused the whole earlier chase), and doesn't touch Apps Script's
+  // UrlFetch quota either. Same SDK family as ZOHO.CRM.API.getRecord,
+  // used flawlessly throughout the rest of this build.
   return ZOHO.CRM.API.searchRecord({ Entity: module, Type: "phone", Query: phone })
     .then(function(response){
       if(response && response.data && response.data.length){
-        return response.data[0].id;
+        var record = response.data[0];
+        return {
+          id: record.id,
+          name: nameField ? record[nameField] : null,
+          status: statusField ? record[statusField] : null
+        };
       }
-      return null; // no match found — not an error
+      return { id: null, name: null, status: null }; // no match found — not an error
     })
     .catch(function(err){
       // searchRecord appears to reject on "no match found" as well as on
@@ -212,7 +223,7 @@ function searchLead(module, phone){
       // genuine problem (wrong module name, permission issue) is still
       // visible if this keeps happening.
       console.error("searchRecord issue for " + phone + " (may just mean no match):", err);
-      return null;
+      return { id: null, name: null, status: null };
     });
 }
 
@@ -283,19 +294,20 @@ function loadDashboard(){
 
   fetchUnreadConversations(client)
     .then(function(convs){
-      // Back to parallel (not sequential) — the earlier slowdown was based
-      // on a wrong diagnosis (thought this was a per-second rate limit; it
-      // was actually Apps Script's daily UrlFetch quota, which pacing
-      // requests over time does nothing for). Caching in handleSearchLead
-      // now addresses the real cause, so there's no reason to stay slow.
+      // Parallel, not sequential — with searchLead now a native SDK call
+      // rather than an Apps Script relay, there's no shared quota to worry
+      // about tripping, so no reason to slow things down.
       return Promise.all(convs.map(function(conv){
         return Promise.all([
-          searchLead(client.module, conv.participantId),
+          searchLead(client.module, conv.participantId, client.nameField, client.statusField),
           fetchThreadMessages(conv.id, client.accountId)
         ]).then(function(pair){
-          var recordId = pair[0];
+          var leadMatch = pair[0];
           var messages = pair[1];
-          var item = { client: client, conv: conv, recordId: recordId };
+          var item = {
+            client: client, conv: conv, recordId: leadMatch.id,
+            crmName: leadMatch.name, crmStatus: leadMatch.status
+          };
           item.hrs = hoursRemainingFromMessages(messages);
           var lastIn = lastIncomingMessage(messages);
           item.updatedMs = lastIn
@@ -387,7 +399,15 @@ function buildRow(item){
   main.className = "row-main";
   var name = document.createElement("div");
   name.className = "row-name";
-  name.textContent = item.conv.participantName || item.conv.participantUsername || item.conv.participantId;
+  name.textContent = item.crmName || item.conv.participantName || item.conv.participantUsername ||
+    ("+" + item.conv.participantId);
+  if(item.recordId && item.crmStatus){
+    var statusBadge = document.createElement("span");
+    statusBadge.className = "status-badge";
+    if(item.crmStatus.toLowerCase().indexOf("dead") !== -1) statusBadge.classList.add("dead");
+    statusBadge.textContent = item.crmStatus;
+    name.appendChild(statusBadge);
+  }
   var preview = document.createElement("div");
   preview.className = "row-preview";
   preview.textContent = item.conv.lastMessage || "";
