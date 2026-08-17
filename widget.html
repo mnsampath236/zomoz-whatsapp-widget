@@ -270,30 +270,27 @@ function loadDashboard(){
 
   fetchUnreadConversations(client)
     .then(function(convs){
-      // Sequential, not Promise.all — firing every conversation's search +
-      // name-fetch + message-fetch simultaneously was very likely tripping
-      // Zoho's rate limits under real load, which explains leads flipping
-      // between matched/unmatched on different refreshes (a transient
-      // failure, not a real data problem). Slower, but reliable.
-      return convs.reduce(function(chain, conv){
-        return chain.then(function(results){
-          return Promise.all([
-            searchLead(client.module, conv.participantId, client.nameField),
-            fetchThreadMessages(conv.id, client.accountId)
-          ]).then(function(pair){
-            var leadMatch = pair[0];
-            var messages = pair[1];
-            var item = { client: client, conv: conv, recordId: leadMatch.id, crmName: leadMatch.name };
-            item.hrs = hoursRemainingFromMessages(messages);
-            var lastIn = lastIncomingMessage(messages);
-            item.updatedMs = lastIn
-              ? new Date(lastIn.createdAt || lastIn.sentAt).getTime()
-              : new Date(conv.updatedTime || conv.lastMessageAt).getTime(); // fallback only if no incoming message found
-            results.push(item);
-            return results;
-          });
+      // Back to parallel (not sequential) — the earlier slowdown was based
+      // on a wrong diagnosis (thought this was a per-second rate limit; it
+      // was actually Apps Script's daily UrlFetch quota, which pacing
+      // requests over time does nothing for). Caching in handleSearchLead
+      // now addresses the real cause, so there's no reason to stay slow.
+      return Promise.all(convs.map(function(conv){
+        return Promise.all([
+          searchLead(client.module, conv.participantId, client.nameField),
+          fetchThreadMessages(conv.id, client.accountId)
+        ]).then(function(pair){
+          var leadMatch = pair[0];
+          var messages = pair[1];
+          var item = { client: client, conv: conv, recordId: leadMatch.id, crmName: leadMatch.name };
+          item.hrs = hoursRemainingFromMessages(messages);
+          var lastIn = lastIncomingMessage(messages);
+          item.updatedMs = lastIn
+            ? new Date(lastIn.createdAt || lastIn.sentAt).getTime()
+            : new Date(conv.updatedTime || conv.lastMessageAt).getTime(); // fallback only if no incoming message found
+          return item;
         });
-      }, Promise.resolve([]));
+      }));
     })
     .then(function(items){
       currentRawItems = items;
