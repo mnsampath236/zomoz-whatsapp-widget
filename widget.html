@@ -151,6 +151,10 @@ var CONFIG = {
     { accountId: "6a45af179d9472faae496281", module: "GoBIG_Lead", label: "GoBIG", urlSegment: "CustomModule2" }
   ],
 
+  // Currently unused — auto-refresh is off, dashboard loads on open and via
+  // the manual Refresh button only. Kept here so it's a one-line change to
+  // re-enable later (add setInterval(loadDashboard, CONFIG.POLL_INTERVAL_MS)
+  // back into the boot section at the bottom of the file).
   POLL_INTERVAL_MS: 20000
 };
 
@@ -510,14 +514,12 @@ $("refresh-btn").addEventListener("click", loadDashboard);
 
 /* =========================================================================
    BOOT
-   ========================================================================== */
+   ========================================================================= */
 ZOHO.embeddedApp.on("PageLoad", function(){
   populateClientDropdown();
-  loadDashboard();
-  setInterval(loadDashboard, CONFIG.POLL_INTERVAL_MS);
+  loadDashboard(); // manual only — no auto-poll; use the 🔄 Refresh button
 });
 ZOHO.embeddedApp.init();
 </script>
 </body>
 </html>
-
