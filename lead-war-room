@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Franchise Lead War Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0A0D12;
+  --panel:#12161F;
+  --panel-2:#171C27;
+  --border:#232A38;
+  --text:#EDEFF3;
+  --text-dim:#8A93A6;
+  --text-faint:#5B6478;
+  --red:#FF5D5D;
+  --red-bg:rgba(255,93,93,0.12);
+  --amber:#FFA94D;
+  --amber-bg:rgba(255,169,77,0.12);
+  --yellow:#F2C94C;
+  --yellow-bg:rgba(242,201,76,0.12);
+  --teal:#35D0A8;
+  --teal-bg:rgba(53,208,168,0.12);
+  --blue:#5B8DEF;
+  --blue-bg:rgba(91,141,239,0.12);
+  --violet:#B98BF0;
+  --violet-bg:rgba(185,139,240,0.12);
+  --sand:#D9A066;
+  --sand-bg:rgba(217,160,102,0.14);
+  --rose:#F2789F;
+  --rose-bg:rgba(242,120,159,0.12);
+  --gold:#E8C468;
+  --gold-bg:rgba(232,196,104,0.14);
+  --mono:'IBM Plex Mono',monospace;
+  --display:'Space Grotesk',sans-serif;
+  --body:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);color:var(--text);font-family:var(--body);}
+body{padding-bottom:60px;}
+::selection{background:var(--blue);color:#fff;}
+a{color:inherit;}
+.wrap{max-width:1320px;margin:0 auto;padding:0 28px;}
+
+/* ---------- Top bar ---------- */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  background:rgba(10,13,18,0.92);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+  padding:16px 0;
+}
+.topbar-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-mark{
+  width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(135deg,var(--red),var(--amber));
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-weight:700;font-size:15px;color:#0A0D12;
+  flex-shrink:0;
+}
+.brand h1{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-0.01em;}
+.brand p{font-size:12px;color:var(--text-dim);margin-top:1px;}
+.clock{
+  font-family:var(--mono);font-size:13px;color:var(--text-dim);
+  text-align:right;line-height:1.5;
+}
+.clock b{color:var(--text);font-weight:500;}
+
+/* ---------- Hero ---------- */
+.hero{padding:34px 0 8px;}
+.hero-headline{
+  font-family:var(--display);font-weight:700;
+  font-size:clamp(26px,3.4vw,40px);letter-spacing:-0.015em;line-height:1.15;
+  max-width:800px;
+}
+.hero-headline .n{
+  color:var(--red);
+  text-shadow:0 0 26px rgba(255,93,93,0.45);
+}
+.hero-sub{color:var(--text-dim);font-size:15px;margin-top:10px;max-width:640px;line-height:1.55;}
+
+/* ---------- KPI row ---------- */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:26px 0 8px;}
+.kpi{
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;
+  padding:16px 16px 14px;cursor:pointer;transition:border-color .15s, transform .15s;
+  position:relative;overflow:hidden;
+}
+.kpi:hover{border-color:var(--text-faint);transform:translateY(-1px);}
+.kpi.active{border-color:var(--blue);}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;}
+.kpi.tone-red::before{background:var(--red);}
+.kpi.tone-amber::before{background:var(--amber);}
+.kpi.tone-yellow::before{background:var(--yellow);}
+.kpi.tone-teal::before{background:var(--teal);}
+.kpi.tone-blue::before{background:var(--blue);}
+.kpi-num{font-family:var(--mono);font-weight:600;font-size:28px;letter-spacing:-0.01em;}
+.kpi-label{font-size:11.5px;color:var(--text-dim);margin-top:5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+.kpi-sub{font-size:11px;color:var(--text-faint);margin-top:4px;}
+
+/* ---------- Panel / section ---------- */
+.section{margin-top:34px;}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap;}
+.section-title{font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:-0.005em;}
+.section-title small{display:block;font-family:var(--body);font-weight:400;font-size:12.5px;color:var(--text-dim);margin-top:3px;}
+.pill-count{
+  font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--border);
+  padding:3px 9px;border-radius:99px;color:var(--text-dim);
+}
+
+/* ---------- Filter bar ---------- */
+.filterbar{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:14px;
+}
+.filterbar select, .filterbar input[type=text]{
+  background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+  font-family:var(--body);font-size:13px;padding:7px 10px;border-radius:8px;outline:none;
+}
+.filterbar select:focus, .filterbar input[type=text]:focus{border-color:var(--blue);}
+.filterbar input[type=text]{flex:1;min-width:160px;}
+.chip-group{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{
+  font-size:12px;font-family:var(--mono);padding:6px 11px;border-radius:99px;
+  border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);cursor:pointer;
+  transition:all .12s;user-select:none;
+}
+.chip:hover{color:var(--text);}
+.chip.on{background:var(--blue-bg);border-color:var(--blue);color:#fff;}
+
+/* ---------- Tab bar (workflow sections) ---------- */
+.tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.tabbtn{
+  font-family:var(--body);font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;
+  border:1px solid var(--border);background:var(--panel);color:var(--text-dim);cursor:pointer;
+  transition:all .12s;display:flex;align-items:center;gap:8px;
+}
+.tabbtn:hover{border-color:var(--text-faint);color:var(--text);}
+.tabbtn.on{background:var(--panel-2);border-color:var(--blue);color:var(--text);}
+.tabcount{
+  font-family:var(--mono);font-size:11px;background:var(--panel-2);border:1px solid var(--border);
+  padding:1px 7px;border-radius:99px;color:var(--text-faint);
+}
+.tabbtn.on .tabcount{color:var(--blue);border-color:var(--blue);}
+.tab-hint{font-size:12.5px;color:var(--text-faint);margin-bottom:10px;}
+.senior-heading{
+  font-family:var(--display);font-weight:600;font-size:14.5px;color:var(--text);
+  margin:22px 0 8px;display:flex;align-items:center;gap:8px;
+}
+.senior-heading:first-child{margin-top:0;}
+
+/* ---------- Table ---------- */
+.table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{
+  text-align:left;padding:11px 14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-faint);border-bottom:1px solid var(--border);font-weight:600;cursor:pointer;white-space:nowrap;
+  background:var(--panel-2);
+}
+thead th:hover{color:var(--text-dim);}
+thead th.sorted{color:var(--blue);}
+tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--panel-2);}
+tbody td{padding:11px 14px;vertical-align:middle;}
+.lead-name{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.lead-meta{font-size:11.5px;color:var(--text-faint);margin-top:2px;font-family:var(--mono);}
+.crm-link{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--blue);
+  border:1px solid var(--blue);border-radius:5px;padding:1px 6px;white-space:nowrap;text-decoration:none;
+}
+.crm-link:hover{background:var(--blue-bg);}
+.badge{
+  display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;font-weight:600;
+  padding:4px 9px;border-radius:6px;white-space:nowrap;
+}
+.badge.red{background:var(--red-bg);color:var(--red);}
+.badge.amber{background:var(--amber-bg);color:var(--amber);}
+.badge.yellow{background:var(--yellow-bg);color:var(--yellow);}
+.badge.teal{background:var(--teal-bg);color:var(--teal);}
+.tag{
+  display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;
+  font-family:var(--mono);
+}
+.tag.zomoz{background:var(--blue-bg);color:var(--blue);}
+.tag.SharkSports{background:var(--violet-bg);color:var(--violet);}
+.tag.bucket{margin-left:5px;}
+.countdown{font-family:var(--mono);font-weight:600;font-size:13px;}
+.status-txt{font-size:12px;color:var(--text-dim);}
+.agent-txt{font-size:12.5px;}
+.agent-txt.unassigned{color:var(--text-faint);font-style:italic;}
+.empty-row td{padding:40px;text-align:center;color:var(--text-faint);font-size:13px;}
+
+/* expand detail row */
+.detail-row td{background:var(--panel-2);padding:14px 18px;font-size:12.5px;color:var(--text-dim);border-bottom:1px solid var(--border);}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 24px;}
+.detail-grid div b{color:var(--text);font-weight:600;display:block;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-faint);margin-bottom:2px;}
+.detail-cta{margin-top:12px;}
+.detail-cta a{
+  display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--bg);
+  background:var(--blue);padding:7px 14px;border-radius:8px;text-decoration:none;
+}
+
+/* ---------- Charts row ---------- */
+.charts-row{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:34px;}
+.chart-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;}
+.chart-card h3{font-family:var(--display);font-size:14.5px;font-weight:600;margin-bottom:14px;}
+.chart-card canvas{max-height:230px;}
+
+/* ---------- Callout / methodology ---------- */
+.callout{
+  background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--blue);
+  border-radius:10px;padding:18px 20px;margin-top:34px;font-size:13px;line-height:1.65;color:var(--text-dim);
+}
+.callout h4{font-family:var(--display);color:var(--text);font-size:14px;margin-bottom:8px;font-weight:600;}
+.callout ul{margin:8px 0 0 18px;}
+.callout li{margin-bottom:5px;}
+.callout code{font-family:var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--teal);}
+
+/* ---------- Load / error states ---------- */
+.state-msg{
+  display:flex;align-items:center;gap:12px;justify-content:center;
+  color:var(--text-dim);font-size:14px;padding:80px 20px;text-align:center;
+}
+.state-spinner{
+  width:18px;height:18px;border-radius:50%;border:2px solid var(--border);
+  border-top-color:var(--blue);animation:spin 0.8s linear infinite;flex-shrink:0;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.state-error{
+  flex-direction:column;color:var(--red);background:var(--red-bg);
+  border:1px solid var(--red);border-radius:12px;margin-top:20px;
+}
+.state-error code{font-family:var(--mono);background:var(--panel-2);color:var(--text);padding:2px 6px;border-radius:4px;font-size:12px;margin-top:8px;display:inline-block;}
+
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+
+@media (max-width: 900px){
+  .kpi-row{grid-template-columns:repeat(2,1fr);}
+  .charts-row{grid-template-columns:1fr;}
+  .wrap{padding:0 16px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">FL</div>
+      <div>
+        <h1>Franchise Lead War Room</h1>
+        <p>Zomoz + SharkSports &middot; live SLA &amp; contact-cadence monitor</p>
+      </div>
+    </div>
+    <div class="clock" id="clock"></div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div id="loadState" class="state-msg">
+    <div class="state-spinner"></div>
+    Loading leads from Google Sheets&hellip;
+  </div>
+  <div id="errorState" class="state-msg state-error" style="display:none"></div>
+
+  <div id="mainApp" style="display:none">
+
+  <div class="hero">
+    <div class="hero-headline" id="heroHeadline">Loading&hellip;</div>
+    <p class="hero-sub">Six workflow stages below, one section each. Work Fresh Leads first, then Contact Attempts, then whichever bucket a lead has fallen into. Red rows needed a call yesterday.</p>
+  </div>
+
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Work queue
+        <small>Pick a stage below. Filters apply within whichever stage you're viewing.</small>
+      </div>
+    </div>
+
+    <div class="filterbar">
+      <div class="chip-group" id="tierChips"></div>
+      <select id="moduleFilter">
+        <option value="all">All modules</option>
+      </select>
+      <select id="agentFilter">
+        <option value="all">All agents</option>
+      </select>
+      <input type="text" id="searchBox" placeholder="Search name, phone, or ID&hellip;">
+    </div>
+
+    <div class="tabbar" id="tabBar"></div>
+
+    <div id="tabContent"></div>
+  </div>
+
+  <div class="charts-row">
+    <div class="chart-card">
+      <h3>Agent workload &mdash; open leads by urgency</h3>
+      <canvas id="agentChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Where the backlog lives</h3>
+      <canvas id="statusChart"></canvas>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h4>How this dashboard decides who's urgent</h4>
+    <ul>
+      <li><b style="color:var(--text)">Fresh Lead — 1 day:</b> from <code>CreatedTime</code>. First contact needs to happen fast, before interest cools.</li>
+      <li><b style="color:var(--text)">Senior Bucket (Initial Closer Meeting Set) — 1 day:</b> from the date the meeting was set (last status change), split into its own view per senior below.</li>
+      <li><b style="color:var(--text)">Reschedule — 3 days:</b> <code>Reschedule Initial Closer Meeting</code>, <code>Reschedule 1st/2nd/3rd Attempt</code> — from the promised <code>RescheduleDate</code>.</li>
+      <li><b style="color:var(--text)">Parked — 3 days:</b> <code>Parked Lead</code>, <code>Park Lead 1st/2nd/3rd Attempt</code> — from <code>FutureDateParked</code>, the date the lead asked to be revisited.</li>
+      <li><b style="color:var(--text)">Followup — 3 days:</b> <code>Contacted (But Followup Needs)</code> and the <code>Conatcted - Followup 1/2/3</code> stages — from <code>ContactedFollowupTS</code>.</li>
+      <li><b style="color:var(--text)">Contact Attempts — 5 days:</b> <code>1st</code> through <code>5th Contact Failed</code> — from <code>CreatedTime</code>.</li>
+      <li><b style="color:var(--text)">Any missing baseline date</b> (e.g. no <code>RescheduleDate</code> on a Reschedule lead) falls back to last contact, then created date, rather than breaking.</li>
+      <li><b style="color:var(--text)">Stale flag:</b> even inside the SLA window, any lead with no update in 2+ days is flagged yellow &mdash; the daily-cadence gap you described (called day 1, silence for days, called again too late).</li>
+      <li><b style="color:var(--text)">Hidden entirely, no queue:</b> <code>Initial Closer Meeting Successful</code>, <code>P&amp;L Shared</code>, <code>Term Sheet Signed</code>, <code>Franchise Fee Collected</code>, <code>Junk Lead</code>, <code>Dead Lead</code>, <code>Not Qualified</code>, <code>Data Collection</code>, <code>Contacted &amp; Interested</code>, <code>Response Awaited by Lead</code>, <code>Re-Engaged Dead Leads</code>.</li>
+      <li><b style="color:var(--text)">CRM ↗ links:</b> each lead links straight to its Zoho CRM record (SharkSports and zomoz use different URL patterns, handled automatically by module).</li>
+    </ul>
+  </div>
+
+  </div>
+
+</div>
+
+<script>
+/**
+ * ============================ CONFIG — FILL THESE IN ============================
+ * API_URL: your deployed Apps Script web app URL (Code.gs), ending in /exec.
+ * API_TOKEN: must exactly match CONFIG.API_TOKEN in Code.gs.
+ * PAGE_KEY: a second random string, separate from API_TOKEN. Set the Zoho Web Tab's
+ *   URL to "https://yourname.github.io/reponame/?key=PASTE_SAME_STRING". Leave blank
+ *   to disable this check.
+ * REQUIRE_IFRAME: if true, refuses to render when opened as a top-level page (i.e. not
+ *   embedded in anything). Both of these deter casual direct access — neither is real
+ *   access control, since the URL and key are visible to anyone with dev tools open or
+ *   who inspects the Web Tab config in Zoho's Setup. See the chat for what would.
+ */
+const API_URL = 'https://script.google.com/macros/s/AKfycbzTStnlRppf4MHUOCEtjQnE7bvYLwC3TeLlPWzRnMrETOIKjBtetYsao9k9EBZOoa92AQ/exec';
+const API_TOKEN = 'BNNibClGqSxpZJY1dRmEtpL2DfL1U3xZ';
+const PAGE_KEY = ''; // <-- optional, e.g. a random 24-char string
+const REQUIRE_IFRAME = false; // <-- set true once you've confirmed the Zoho Web Tab embed works
+/** ============================ end config ============================ */
+
+let DATA = null;
+
+/**
+ * ============================ SLA RULE ENGINE ============================
+ * Mirror of the same table in Code.gs (findSlaRule_). Keep both in sync.
+ * baselineField: c=CreatedTime, lt=last touch, rs=RescheduleDate, fp=FutureDateParked, cf=ContactedFollowupTS
+ */
+const SLA_RULES = [
+  { statuses:['Fresh Lead'], days:1, baselineField:'c', bucket:'Fresh' },
+  { statuses:['Initial Closer Meeting Set'], days:1, baselineField:'lt', bucket:'Senior Bucket' },
+  { statuses:['Reschedule Initial Closer Meeting','Reschedule 1st Attempt','Reschedule 2nd Attempt','Reschedule 3rd Attempt'], days:3, baselineField:'rs', bucket:'Reschedule' },
+  { statuses:['Parked Lead','Park lead 1st Attempt','Park Lead 2nd Attempt','Park Lead 3rd Attempt'], days:3, baselineField:'fp', bucket:'Parked' },
+  { statuses:['Contacted (But Followup Needs)','Conatcted - Followup- 1','Conatcted - Followup - 2','Conatcted - Followup- 3'], days:3, baselineField:'cf', bucket:'Followup' },
+];
+const DEFAULT_SLA_RULE = { statuses:[], days:5, baselineField:'c', bucket:null };
+function findSlaRule(status){
+  for(const rule of SLA_RULES){ if(rule.statuses.indexOf(status)!==-1) return rule; }
+  return DEFAULT_SLA_RULE;
+}
+/** ============================ end rule engine ============================ */
+
+function parseDate(s){ return s ? new Date(s) : null; }
+function daysBetween(a,b){ return Math.floor((a-b)/86400000); }
+
+function buildCrmUrl(module, zid){
+  if(!zid) return null;
+  const tpl = (DATA.crmUrlTemplates||{})[module];
+  if(!tpl) return null;
+  return tpl.replace('{id}', zid);
+}
+
+function deriveLead(d, now){
+  const created = parseDate(d.c);
+  const lastTouch = parseDate(d.lt) || created;
+  const rule = findSlaRule(d.s);
+  const baseline = parseDate(d[rule.baselineField]) || lastTouch || created;
+  const slaDays = rule.days;
+  const deadline = new Date(baseline.getTime() + slaDays*86400000);
+  const daysToDeadline = daysBetween(deadline, now);
+  const daysSinceCreation = daysBetween(now, created);
+  const daysSinceLastTouch = daysBetween(now, lastTouch);
+  let tier;
+  if(daysToDeadline < 0) tier='breached';
+  else if(daysToDeadline <= 1) tier='due';
+  else if(daysSinceLastTouch >= 2) tier='stale';
+  else tier='ontrack';
+  return Object.assign({}, d, {
+    created, lastTouch, deadline, daysToDeadline, daysSinceCreation, daysSinceLastTouch,
+    tier, bucket: rule.bucket, slaDays, crmUrl: buildCrmUrl(d.m, d.zid)
+  });
+}
+
+let NOW = new Date();
+let mainQueue = [];
+
+const BUCKET_STYLES = {
+  'Reschedule': {fg:'var(--violet)', bg:'var(--violet-bg)'},
+  'Parked': {fg:'var(--sand)', bg:'var(--sand-bg)'},
+  'Followup': {fg:'var(--rose)', bg:'var(--rose-bg)'},
+  'Senior Bucket': {fg:'var(--gold)', bg:'var(--gold-bg)'},
+};
+
+const TIER_META = {
+  breached:{label:'SLA Breached', color:'red'},
+  due:{label:'Due today/tomorrow', color:'amber'},
+  stale:{label:'Stale — no contact 2+d', color:'yellow'},
+  ontrack:{label:'On track', color:'teal'},
+};
+
+const TAB_DEFS = [
+  { key:'fresh', label:'Fresh Leads', hint:'1-day SLA from CreatedTime — first contact needs to happen today.', match:d=>d.bucket==='Fresh' },
+  { key:'standard', label:'Contact Attempts', hint:'5-day SLA from CreatedTime — 1st through 5th contact attempts.', match:d=>!d.bucket },
+  { key:'followup', label:'Followup Bucket', hint:'3-day SLA from ContactedFollowupTS.', match:d=>d.bucket==='Followup' },
+  { key:'reschedule', label:'Reschedule Bucket', hint:'3-day SLA from RescheduleDate.', match:d=>d.bucket==='Reschedule' },
+  { key:'parked', label:'Parked Bucket', hint:'3-day SLA from FutureDateParked.', match:d=>d.bucket==='Parked' },
+  { key:'senior', label:'Senior Bucket', hint:'1-day SLA — meetings already set. Grouped by senior below.', match:d=>d.bucket==='Senior Bucket' },
+];
+
+// ---------------- state ----------------
+const state = { tab:'fresh', tier:'all', module:'all', agent:'all', search:'', sortKey:'daysToDeadline', sortDir:'asc', expanded:null };
+
+// ---------------- clock ----------------
+function fmtClock(){
+  const el = document.getElementById('clock');
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN',{weekday:'short', day:'2-digit', month:'short', year:'numeric'});
+  const timeStr = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  el.innerHTML = '<b>'+dateStr+'</b><br>'+timeStr;
+}
+fmtClock(); setInterval(fmtClock, 1000);
+
+// ---------------- KPIs ----------------
+function renderKPIs(){
+  const counts = {breached:0,due:0,stale:0,ontrack:0};
+  mainQueue.forEach(d=>counts[d.tier]++);
+  const kpis = [
+    {n:mainQueue.length, label:'Open leads, all stages', sub:DATA.totalLeads+' leads total across both modules', tone:'blue', kind:'tier', val:'all'},
+    {n:counts.breached, label:'SLA breached — call now', sub:'past its stage\'s deadline (1/3/5-day rules)', tone:'red', kind:'tier', val:'breached'},
+    {n:counts.due, label:'Due today or tomorrow', sub:'0–1 day of runway left', tone:'amber', kind:'tier', val:'due'},
+    {n:counts.stale, label:'Stale, no contact 2+ days', sub:'inside SLA but going cold', tone:'yellow', kind:'tier', val:'stale'},
+  ];
+  const row = document.getElementById('kpiRow');
+  row.innerHTML = kpis.map(k=>`
+    <div class="kpi tone-${k.tone} ${(k.kind==='tier'&&state.tier===k.val)?'active':''}" data-kind="${k.kind}" data-val="${k.val}">
+      <div class="kpi-num">${k.n}</div>
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`).join('');
+  row.querySelectorAll('.kpi').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const kind = el.getAttribute('data-kind');
+      const val = el.getAttribute('data-val');
+      if(kind==='tab'){ state.tab = val; renderAll(); return; }
+      state.tier = (state.tier===val) ? 'all' : val;
+      renderAll();
+    });
+  });
+
+  document.getElementById('heroHeadline').innerHTML =
+    counts.breached>0
+    ? `<span class="n">${counts.breached} lead${counts.breached===1?'':'s'}</span> have already blown their deadline.`
+    : `Queue is clean — nothing has breached its deadline right now.`;
+}
+
+// ---------------- filter dropdowns ----------------
+function populateFilters(){
+  const modules = [...new Set(mainQueue.map(d=>d.m))].sort();
+  const agents = [...new Set(mainQueue.map(d=>d.sr||'Unassigned'))].sort();
+  const modSel = document.getElementById('moduleFilter');
+  modules.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; modSel.appendChild(o); });
+  const agSel = document.getElementById('agentFilter');
+  agents.forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=a; agSel.appendChild(o); });
+  modSel.addEventListener('change', e=>{ state.module=e.target.value; renderAll(); });
+  agSel.addEventListener('change', e=>{ state.agent=e.target.value; renderAll(); });
+  document.getElementById('searchBox').addEventListener('input', e=>{ state.search=e.target.value.toLowerCase(); renderAll(); });
+}
+
+function renderChips(){
+  const chipWrap = document.getElementById('tierChips');
+  const chips = [{k:'all',l:'All'},{k:'breached',l:'Breached'},{k:'due',l:'Due soon'},{k:'stale',l:'Stale'},{k:'ontrack',l:'On track'}];
+  chipWrap.innerHTML = chips.map(c=>`<span class="chip ${state.tier===c.k?'on':''}" data-k="${c.k}">${c.l}</span>`).join('');
+  chipWrap.querySelectorAll('.chip').forEach(el=>{
+    el.addEventListener('click', ()=>{ state.tier = el.getAttribute('data-k'); renderAll(); });
+  });
+}
+
+// ---------------- tab bar ----------------
+function renderTabs(){
+  const wrap = document.getElementById('tabBar');
+  let html = TAB_DEFS.map(t=>{
+    const n = mainQueue.filter(t.match).length;
+    return `<button class="tabbtn ${state.tab===t.key?'on':''}" data-k="${t.key}">${t.label} <span class="tabcount">${n}</span></button>`;
+  }).join('');
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.tabbtn').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.tab = b.getAttribute('data-k'); state.expanded=null; renderAll(); });
+  });
+}
+
+// ---------------- shared table helpers ----------------
+function fmtDate(d){ return d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) : '—'; }
+function deadlineLabel(d){
+  if(d.daysToDeadline < 0) return { text: Math.abs(d.daysToDeadline)+'d overdue', cls:'red' };
+  if(d.daysToDeadline === 0) return { text:'Due today', cls:'amber' };
+  if(d.daysToDeadline === 1) return { text:'Due tomorrow', cls:'amber' };
+  return { text: d.daysToDeadline+'d left', cls: (d.tier==='stale'?'yellow':'teal') };
+}
+function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s; return p.innerHTML; }
+
+function applyCommonFilters(rows){
+  return rows.filter(d=>{
+    if(state.tier!=='all' && d.tier!==state.tier) return false;
+    if(state.module!=='all' && d.m!==state.module) return false;
+    if(state.agent!=='all' && (d.sr||'Unassigned')!==state.agent) return false;
+    if(state.search){
+      const hay = (d.n+' '+d.p+' '+d.id).toLowerCase();
+      if(!hay.includes(state.search)) return false;
+    }
+    return true;
+  });
+}
+
+function sortRows(rows){
+  const dir = state.sortDir==='asc'?1:-1;
+  return rows.slice().sort((a,b)=>{
+    let av=a[state.sortKey], bv=b[state.sortKey];
+    if(typeof av==='string'){ av=av.toLowerCase(); bv=(bv||'').toLowerCase(); }
+    if(av<bv) return -1*dir; if(av>bv) return 1*dir; return 0;
+  });
+}
+
+function theadHtml(){
+  const cols = [
+    ['tier','Priority'],['n','Lead'],['m','Module'],['s','Status'],
+    ['sr','Agent'],['daysSinceCreation','Age'],['daysSinceLastTouch','Last contact'],['daysToDeadline','Deadline']
+  ];
+  return '<thead><tr>' + cols.map(([k,l])=>`<th data-key="${k}" class="${state.sortKey===k?'sorted':''}">${l}</th>`).join('') + '</tr></thead>';
+}
+
+function rowsHtml(rows){
+  if(rows.length===0) return '<tr class="empty-row"><td colspan="8">No leads match these filters.</td></tr>';
+  return rows.map(d=>{
+    const dl = deadlineLabel(d);
+    const tm = TIER_META[d.tier];
+    const agentCls = d.sr ? '' : 'unassigned';
+    const crm = d.crmUrl ? `<a href="${d.crmUrl}" target="_blank" rel="noopener" class="crm-link" onclick="event.stopPropagation()">CRM ↗</a>` : '';
+    return `
+    <tr data-id="${d.id}">
+      <td><span class="badge ${tm.color}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>${tm.label}</span></td>
+      <td>
+        <div class="lead-name">${escapeHtml(d.n||'(no name)')}${crm}</div>
+        <div class="lead-meta">${d.p||'—'} &middot; ${d.id}</div>
+      </td>
+      <td><span class="tag ${d.m}">${d.m}</span>${d.bucket && BUCKET_STYLES[d.bucket] ? `<span class="tag bucket" style="background:${BUCKET_STYLES[d.bucket].bg};color:${BUCKET_STYLES[d.bucket].fg}">${d.bucket}</span>` : ''}</td>
+      <td><span class="status-txt">${escapeHtml(d.s)}</span></td>
+      <td><span class="agent-txt ${agentCls}">${d.sr||'Unassigned'}</span></td>
+      <td class="countdown">${d.daysSinceCreation}d</td>
+      <td class="countdown">${d.daysSinceLastTouch}d ago</td>
+      <td><span class="countdown" style="color:var(--${dl.cls==='teal'?'teal':dl.cls})">${dl.text}</span></td>
+    </tr>
+    ${state.expanded===d.id ? renderDetail(d) : ''}
+    `;
+  }).join('');
+}
+
+function tableWrapHtml(rows){
+  return `<div class="table-wrap"><table>${theadHtml()}<tbody>${rowsHtml(rows)}</tbody></table></div>`;
+}
+
+function renderDetail(d){
+  const dl = deadlineLabel(d);
+  return `<tr class="detail-row"><td colspan="8">
+    <div class="detail-grid">
+      <div><b>Created</b>${fmtDate(d.created)} (${d.daysSinceCreation}d ago)</div>
+      <div><b>Last contact</b>${d.lastTouch?fmtDate(d.lastTouch):'—'} (${d.daysSinceLastTouch}d ago)</div>
+      <div><b>SLA track</b>${d.bucket||'Standard'} — ${d.slaDays}-day rule</div>
+      <div><b>SLA deadline</b>${fmtDate(d.deadline)} &mdash; ${dl.text}</div>
+      <div><b>City</b>${d.ct||'—'}</div>
+      <div><b>Interested location</b>${d.il||'—'}</div>
+      <div><b>Reschedule date on file</b>${d.rs?fmtDate(parseDate(d.rs)):'—'}</div>
+      <div><b>Parked-until date on file</b>${d.fp?fmtDate(parseDate(d.fp)):'—'}</div>
+      <div><b>Followup-since timestamp</b>${d.cf?fmtDate(parseDate(d.cf)):'—'}</div>
+    </div>
+    ${d.crmUrl?`<div class="detail-cta"><a href="${d.crmUrl}" target="_blank" rel="noopener">Open in Zoho CRM ↗</a></div>`:''}
+  </td></tr>`;
+}
+
+function attachRowHandlers(container){
+  container.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const id = tr.getAttribute('data-id');
+      state.expanded = (state.expanded===id) ? null : id;
+      renderTabContent();
+    });
+  });
+}
+function attachSortHandlers(container){
+  container.querySelectorAll('thead th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.getAttribute('data-key');
+      if(state.sortKey===key){ state.sortDir = state.sortDir==='asc'?'desc':'asc'; }
+      else { state.sortKey=key; state.sortDir='asc'; }
+      renderTabContent();
+    });
+  });
+}
+
+// ---------------- senior bucket (grouped sub-sections) ----------------
+function seniorSectionsHtml(){
+  const rows = applyCommonFilters(mainQueue.filter(d=>d.bucket==='Senior Bucket'));
+  const groups = {};
+  rows.forEach(d=>{ const k=d.sr||'Unassigned'; (groups[k]=groups[k]||[]).push(d); });
+  const priority = ['Paresh Chhabria','Mehrab Ilavia'];
+  const names = Object.keys(groups).sort((a,b)=>{
+    const ia=priority.indexOf(a), ib=priority.indexOf(b);
+    if(ia!==-1 || ib!==-1) return (ia===-1?99:ia)-(ib===-1?99:ib);
+    return a.localeCompare(b);
+  });
+  if(names.length===0) return '<div class="table-wrap"><table><tbody><tr class="empty-row"><td>No meetings currently set.</td></tr></tbody></table></div>';
+  return names.map(n=>{
+    const grp = sortRows(groups[n]);
+    return `<div class="senior-heading">${escapeHtml(n)} <span class="pill-count">${grp.length}</span></div>${tableWrapHtml(grp)}`;
+  }).join('');
+}
+
+// ---------------- tab content router ----------------
+function renderTabContent(){
+  const container = document.getElementById('tabContent');
+  const def = TAB_DEFS.find(t=>t.key===state.tab) || TAB_DEFS[0];
+  if(def.key==='senior'){
+    container.innerHTML = `<p class="tab-hint">${def.hint}</p>` + seniorSectionsHtml();
+  } else {
+    const rows = sortRows(applyCommonFilters(mainQueue.filter(def.match)));
+    container.innerHTML = `<p class="tab-hint">${def.hint}</p>` + tableWrapHtml(rows);
+  }
+  attachRowHandlers(container);
+  attachSortHandlers(container);
+}
+
+// ---------------- charts (overview across every stage) ----------------
+let agentChart, statusChart;
+function renderCharts(){
+  const agentMap = {};
+  mainQueue.forEach(d=>{
+    const key = d.sr || 'Unassigned';
+    if(!agentMap[key]) agentMap[key] = {breached:0,due:0,stale:0,ontrack:0};
+    agentMap[key][d.tier]++;
+  });
+  const agents = Object.keys(agentMap).sort((a,b)=> {
+    const ta = Object.values(agentMap[a]).reduce((x,y)=>x+y,0);
+    const tb = Object.values(agentMap[b]).reduce((x,y)=>x+y,0);
+    return tb-ta;
+  });
+  const ctx1 = document.getElementById('agentChart');
+  if(agentChart) agentChart.destroy();
+  agentChart = new Chart(ctx1, {
+    type:'bar',
+    data:{
+      labels:agents,
+      datasets:[
+        {label:'Breached', data:agents.map(a=>agentMap[a].breached), backgroundColor:'#FF5D5D'},
+        {label:'Due soon', data:agents.map(a=>agentMap[a].due), backgroundColor:'#FFA94D'},
+        {label:'Stale', data:agents.map(a=>agentMap[a].stale), backgroundColor:'#F2C94C'},
+        {label:'On track', data:agents.map(a=>agentMap[a].ontrack), backgroundColor:'#35D0A8'},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{ x:{stacked:true, ticks:{color:'#8A93A6', font:{size:11}}, grid:{color:'#232A38'}},
+               y:{stacked:true, ticks:{color:'#8A93A6', font:{size:11}}, grid:{color:'#232A38'}} },
+      plugins:{ legend:{ labels:{color:'#8A93A6', font:{size:11}, boxWidth:12} } }
+    }
+  });
+
+  const statusMap = {};
+  mainQueue.forEach(d=>{ statusMap[d.s] = (statusMap[d.s]||0)+1; });
+  const statusEntries = Object.entries(statusMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const ctx2 = document.getElementById('statusChart');
+  if(statusChart) statusChart.destroy();
+  statusChart = new Chart(ctx2, {
+    type:'bar',
+    data:{
+      labels: statusEntries.map(e=>e[0]),
+      datasets:[{ data: statusEntries.map(e=>e[1]), backgroundColor:'#5B8DEF', borderRadius:4 }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      scales:{ x:{ticks:{color:'#8A93A6', font:{size:11}}, grid:{color:'#232A38'}},
+               y:{ticks:{color:'#8A93A6', font:{size:11}}, grid:{display:false}} },
+      plugins:{ legend:{display:false} }
+    }
+  });
+}
+
+// ---------------- main render ----------------
+function renderAll(){
+  renderKPIs();
+  renderChips();
+  renderTabs();
+  renderTabContent();
+}
+
+// ---------------- bootstrap: fetch from the Apps Script JSON API ----------------
+function showError(message, detail){
+  document.getElementById('loadState').style.display = 'none';
+  const err = document.getElementById('errorState');
+  err.style.display = 'flex';
+  err.innerHTML = `<div>${message}</div>` + (detail ? `<code>${escapeHtml(detail)}</code>` : '');
+}
+
+function passesAccessGate(){
+  if(REQUIRE_IFRAME && window.self === window.top){
+    showError('This page only opens inside Zoho CRM.', 'Not embedded in a frame — access it through the CRM Web Tab, not this link directly. (Set REQUIRE_IFRAME=false in the script to bypass while testing.)');
+    return false;
+  }
+  if(PAGE_KEY){
+    const suppliedKey = new URLSearchParams(window.location.search).get('key');
+    if(suppliedKey !== PAGE_KEY){
+      showError('Missing or incorrect access key.', 'This URL needs a matching ?key=... parameter. Check the Web Tab URL configured in Zoho.');
+      return false;
+    }
+  }
+  return true;
+}
+
+async function boot(){
+  if(!passesAccessGate()) return;
+  if(!API_URL || API_URL.indexOf('PASTE_') === 0){
+    showError('index.html isn\'t configured yet.', 'Set API_URL (and API_TOKEN) near the top of the <script> tag to your deployed Apps Script web app URL.');
+    return;
+  }
+  let res, json;
+  try{
+    const url = API_URL + (API_TOKEN ? (API_URL.indexOf('?')===-1?'?':'&') + 'token=' + encodeURIComponent(API_TOKEN) : '');
+    res = await fetch(url);
+  }catch(err){
+    showError('Couldn\'t reach the Apps Script API.', 'Network error or CORS block: ' + err.message + '. Confirm the web app is deployed with access set to "Anyone".');
+    return;
+  }
+  if(!res.ok){
+    showError('The Apps Script API returned an error.', 'HTTP ' + res.status + '. Open the API_URL directly in a browser tab to see the raw response.');
+    return;
+  }
+  try{
+    json = await res.json();
+  }catch(err){
+    showError('The API response wasn\'t valid JSON.', 'Check that doGet() in Code.gs is deployed with your latest changes.');
+    return;
+  }
+  if(json.error){
+    showError('The Apps Script API rejected the request.', json.error + ' — check API_TOKEN matches CONFIG.API_TOKEN in Code.gs.');
+    return;
+  }
+
+  DATA = json;
+  NOW = new Date();
+  mainQueue = DATA.mainQueue.map(d=>deriveLead(d, NOW));
+
+  document.getElementById('loadState').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+
+  populateFilters();
+  renderAll();
+  renderCharts();
+}
+
+boot();
+</script>
+</body>
+</html>
