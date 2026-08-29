@@ -337,21 +337,21 @@ tbody td{padding:11px 14px;vertical-align:middle;}
 
 <script>
 /**
- * ============================ CONFIG — FILL THESE IN ============================
+ * ============================ CONFIG ============================
  * API_URL: your deployed Apps Script web app URL (Code.gs), ending in /exec.
- * API_TOKEN: must exactly match CONFIG.API_TOKEN in Code.gs.
- * PAGE_KEY: a second random string, separate from API_TOKEN. Set the Zoho Web Tab's
- *   URL to "https://yourname.github.io/reponame/?key=PASTE_SAME_STRING". Leave blank
- *   to disable this check.
- * REQUIRE_IFRAME: if true, refuses to render when opened as a top-level page (i.e. not
- *   embedded in anything). Both of these deter casual direct access — neither is real
- *   access control, since the URL and key are visible to anyone with dev tools open or
- *   who inspects the Web Tab config in Zoho's Setup. See the chat for what would.
+ *
+ * API_TOKEN: NOT stored here. Read from the URL at runtime (?token=...) so it
+ *   never appears in source code or the GitHub repo. Add it to your Zoho Web Tab
+ *   URL or bookmark:
+ *     https://mnsampath236.github.io/zomoz-whatsapp-widget/lead-war-room.html?token=YOUR_TOKEN
+ *   The same value must be saved in Apps Script → Project Settings → Script Properties
+ *   as key "API_TOKEN". It is never checked or stored client-side.
+ *
+ * REQUIRE_IFRAME: set true once you've confirmed the Zoho Web Tab embed works.
  */
 const API_URL = 'https://script.google.com/macros/s/AKfycbzTStnlRppf4MHUOCEtjQnE7bvYLwC3TeLlPWzRnMrETOIKjBtetYsao9k9EBZOoa92AQ/exec';
-const API_TOKEN = 'BNNibClGqSxpZJY1dRmEtpL2DfL1U3xZ';
-const PAGE_KEY = ''; // <-- optional, e.g. a random 24-char string
-const REQUIRE_IFRAME = true; // <-- set true once you've confirmed the Zoho Web Tab embed works
+const API_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+const REQUIRE_IFRAME = true;
 /** ============================ end config ============================ */
 
 let DATA = null;
@@ -812,13 +812,6 @@ function passesAccessGate(){
   if(REQUIRE_IFRAME && window.self === window.top){
     showError('This page only opens inside Zoho CRM.', 'Not embedded in a frame — access it through the CRM Web Tab, not this link directly. (Set REQUIRE_IFRAME=false in the script to bypass while testing.)');
     return false;
-  }
-  if(PAGE_KEY){
-    const suppliedKey = new URLSearchParams(window.location.search).get('key');
-    if(suppliedKey !== PAGE_KEY){
-      showError('Missing or incorrect access key.', 'This URL needs a matching ?key=... parameter. Check the Web Tab URL configured in Zoho.');
-      return false;
-    }
   }
   return true;
 }
