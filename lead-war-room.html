@@ -583,7 +583,7 @@ function renderChips(){
 function renderTabs(){
   const wrap = document.getElementById('tabBar');
   let html = TAB_DEFS.map(t=>{
-    const n = mainQueue.filter(t.match).length;
+    const n = applyCommonFilters(mainQueue.filter(t.match)).length;
     return `<button class="tabbtn ${state.tab===t.key?'on':''}" data-k="${t.key}">${t.label} <span class="tabcount">${n}</span></button>`;
   }).join('');
   wrap.innerHTML = html;
