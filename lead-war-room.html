@@ -326,7 +326,8 @@ tbody td{padding:11px 14px;vertical-align:middle;}
       <li><b style="color:var(--text)">Any missing baseline date</b> (e.g. no <code>RescheduleDate</code> on a Reschedule lead) falls back to last contact, then created date, rather than breaking.</li>
       <li><b style="color:var(--text)">Protocol drift:</b> a separate check on top of the per-stage clock above — flags a lead whose current status has fallen behind where its bucket's anchor date says it should be by now (one stage expected per day), even if <code>ModifiedTime</code> was just refreshed by an unrelated edit. Badged "Behind Protocol" instead of "SLA Breached" so it's clear why. Applies to Contact Attempts (from <code>CreatedTime</code>), Reschedule (from <code>RescheduleDate</code>), Parked (from <code>FutureDateParked</code>), and Followup (from <code>ContactedFollowupTS</code>).</li>
       <li><b style="color:var(--text)">Stale flag:</b> even inside the SLA window, any lead with no update in 2+ days is flagged yellow &mdash; the daily-cadence gap you described (called day 1, silence for days, called again too late).</li>
-      <li><b style="color:var(--text)">Hidden entirely, no queue:</b> <code>Initial Closer Meeting Successful</code>, <code>P&amp;L Shared</code>, <code>Term Sheet Signed</code>, <code>Franchise Fee Collected</code>, <code>Junk Lead</code>, <code>Dead Lead</code>, <code>Not Qualified</code>, <code>Data Collection</code>, <code>Contacted &amp; Interested</code>, <code>Response Awaited by Lead</code>, <code>Re-Engaged Dead Leads</code>.</li>
+      <li><b style="color:var(--text)">Response Awaited — 7 days:</b> lead said they will get back; from <code>ModifiedTime</code>. Flagged if 7 days pass without a status change.</li>
+      <li><b style="color:var(--text)">Hidden entirely, no queue:</b> <code>Initial Closer Meeting Successful</code>, <code>P&amp;L Shared</code>, <code>Term Sheet Signed</code>, <code>Franchise Fee Collected</code>, <code>Junk Lead</code>, <code>Dead Lead</code>, <code>Not Qualified</code>, <code>Data Collection</code>, <code>Contacted &amp; Interested</code>, <code>Re-Engaged Dead Leads</code>.</li>
       <li><b style="color:var(--text)">CRM ↗ links:</b> each lead links straight to its Zoho CRM record (SharkSports and zomoz use different URL patterns, handled automatically by module).</li>
     </ul>
   </div>
@@ -351,7 +352,7 @@ tbody td{padding:11px 14px;vertical-align:middle;}
  */
 const API_URL = 'https://script.google.com/macros/s/AKfycbzTStnlRppf4MHUOCEtjQnE7bvYLwC3TeLlPWzRnMrETOIKjBtetYsao9k9EBZOoa92AQ/exec';
 const API_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
-const REQUIRE_IFRAME = true;
+const REQUIRE_IFRAME = false;
 /** ============================ end config ============================ */
 
 let DATA = null;
@@ -391,6 +392,7 @@ const SLA_RULES = [
   { statuses:['Conatcted - Followup- 1','Conatcted - Followup - 1','Contacted - Followup -1','Contacted - Followup- 1'], days:1, baselineField:'lt', bucket:'Followup' },
   { statuses:['Conatcted - Followup - 2','Contacted - Followup -2','Contacted - Followup- 2'], days:1, baselineField:'lt', bucket:'Followup' },
   { statuses:['Conatcted - Followup- 3','Conatcted - Followup - 3','Contacted - Followup -3','Contacted - Followup- 3'], days:1, baselineField:'lt', bucket:'Followup' },
+  { statuses:['Response Awaited by Lead'], days:7, baselineField:'lt', bucket:'Response Awaited' },
 ];
 const DEFAULT_SLA_RULE = { statuses:[], days:5, baselineField:'c', bucket:null };
 function findSlaRule(status){
@@ -493,6 +495,7 @@ const BUCKET_STYLES = {
   'Parked': {fg:'var(--sand)', bg:'var(--sand-bg)'},
   'Followup': {fg:'var(--rose)', bg:'var(--rose-bg)'},
   'Senior Bucket': {fg:'var(--gold)', bg:'var(--gold-bg)'},
+  'Response Awaited': {fg:'var(--teal)', bg:'var(--teal-bg)'},
 };
 
 const TIER_META = {
@@ -509,6 +512,7 @@ const TAB_DEFS = [
   { key:'reschedule', label:'Reschedule Bucket', hint:'24h SLA per stage — 1st Attempt from RescheduleDate, 2nd/3rd Attempt fresh from ModifiedTime.', match:d=>d.bucket==='Reschedule' },
   { key:'parked', label:'Parked Bucket', hint:'24h SLA per stage — base stage from FutureDateParked, later attempts fresh from ModifiedTime.', match:d=>d.bucket==='Parked' },
   { key:'senior', label:'Senior Bucket', hint:'1-day SLA — meetings already set. Grouped by senior below.', match:d=>d.bucket==='Senior Bucket' },
+  { key:'awaited', label:'Response Awaited', hint:'7-day SLA from ModifiedTime — lead said they will respond; follow up if silent for 7 days.', match:d=>d.bucket==='Response Awaited' },
 ];
 
 // ---------------- state ----------------
@@ -530,7 +534,7 @@ function renderKPIs(){
   mainQueue.forEach(d=>counts[d.tier]++);
   const kpis = [
     {n:mainQueue.length, label:'Open leads, all stages', sub:DATA.totalLeads+' leads total across both modules', tone:'blue', kind:'tier', val:'all'},
-    {n:counts.breached, label:'SLA breached — call now', sub:'past its stage\'s deadline (1/3/5-day rules)', tone:'red', kind:'tier', val:'breached'},
+    {n:counts.breached, label:'SLA breached — call now', sub:'past its stage\'s deadline (1/5/7-day rules)', tone:'red', kind:'tier', val:'breached'},
     {n:counts.due, label:'Due today or tomorrow', sub:'0–1 day of runway left', tone:'amber', kind:'tier', val:'due'},
     {n:counts.stale, label:'Stale, no contact 2+ days', sub:'inside SLA but going cold', tone:'yellow', kind:'tier', val:'stale'},
   ];
