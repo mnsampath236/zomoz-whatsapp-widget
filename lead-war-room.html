@@ -220,6 +220,7 @@ tbody td{padding:11px 14px;vertical-align:middle;}
 .callout ul{margin:8px 0 0 18px;}
 .callout li{margin-bottom:5px;}
 .callout code{font-family:var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--teal);}
+.callout .eg{display:block;margin-top:5px;padding:6px 10px;background:var(--panel-2);border-radius:6px;font-size:12px;color:var(--text-dim);font-style:italic;line-height:1.6;}
 
 /* ---------- Load / error states ---------- */
 .state-msg{
@@ -317,18 +318,55 @@ tbody td{padding:11px 14px;vertical-align:middle;}
   <div class="callout">
     <h4>How this dashboard decides who's urgent</h4>
     <ul>
-      <li><b style="color:var(--text)">Fresh Lead — 1 day:</b> from <code>CreatedTime</code>. First contact needs to happen fast, before interest cools.</li>
-      <li><b style="color:var(--text)">Senior Bucket (Initial Closer Meeting Set) — 1 day:</b> from the date the meeting was set (last status change), split into its own view per senior below.</li>
-      <li><b style="color:var(--text)">Reschedule — 24h each:</b> <code>Reschedule Initial Closer Meeting</code> / <code>1st Attempt</code> (same rule) from the promised <code>RescheduleDate</code>, then <code>2nd/3rd Attempt</code> each fresh from <code>ModifiedTime</code>.</li>
-      <li><b style="color:var(--text)">Parked — 24h each:</b> <code>Parked Lead</code> (base stage) then <code>1st/2nd/3rd Attempt</code> — first stage from <code>FutureDateParked</code>, later stages fresh from <code>ModifiedTime</code>.</li>
-      <li><b style="color:var(--text)">Followup — 24h each:</b> <code>Contacted (But Followup Needs)</code> (base stage) then <code>Followup 1/2/3</code> — first stage from <code>ContactedFollowupTS</code>, later stages fresh from <code>ModifiedTime</code>.</li>
-      <li><b style="color:var(--text)">Contact Attempts — 24h each:</b> <code>1st</code> through <code>5th Contact Failed</code> — each stage gets its own fresh 24h from <code>ModifiedTime</code>, starting when status actually advances to it. Fresh Lead's own deadline is what catches a slow first contact; later stages aren't penalized twice for that.</li>
-      <li><b style="color:var(--text)">Any missing baseline date</b> (e.g. no <code>RescheduleDate</code> on a Reschedule lead) falls back to last contact, then created date, rather than breaking.</li>
-      <li><b style="color:var(--text)">Protocol drift:</b> a separate check on top of the per-stage clock above — flags a lead whose current status has fallen behind where its bucket's anchor date says it should be by now (one stage expected per day), even if <code>ModifiedTime</code> was just refreshed by an unrelated edit. Badged "Behind Protocol" instead of "SLA Breached" so it's clear why. Applies to Contact Attempts (from <code>CreatedTime</code>), Reschedule (from <code>RescheduleDate</code>), Parked (from <code>FutureDateParked</code>), and Followup (from <code>ContactedFollowupTS</code>).</li>
-      <li><b style="color:var(--text)">Stale flag:</b> even inside the SLA window, any lead with no update in 2+ days is flagged yellow &mdash; the daily-cadence gap you described (called day 1, silence for days, called again too late).</li>
-      <li><b style="color:var(--text)">Response Awaited — 7 days:</b> lead said they will get back; from <code>ModifiedTime</code>. Flagged if 7 days pass without a status change.</li>
-      <li><b style="color:var(--text)">Hidden entirely, no queue:</b> <code>Initial Closer Meeting Successful</code>, <code>P&amp;L Shared</code>, <code>Term Sheet Signed</code>, <code>Franchise Fee Collected</code>, <code>Junk Lead</code>, <code>Dead Lead</code>, <code>Not Qualified</code>, <code>Data Collection</code>, <code>Contacted &amp; Interested</code>, <code>Re-Engaged Dead Leads</code>.</li>
-      <li><b style="color:var(--text)">CRM ↗ links:</b> each lead links straight to its Zoho CRM record (SharkSports and zomoz use different URL patterns, handled automatically by module).</li>
+
+      <li><b style="color:var(--text)">Fresh Lead — 1 day from CreatedTime:</b> The moment a lead enters the CRM, the 24-hour clock starts. First contact must happen before interest cools.
+        <span class="eg">Example: Rahul fills a Facebook ad form — lead created Monday 9 AM. Deadline: Tuesday 9 AM. If nobody calls by then → red (Breached). If it's Monday 5 PM → amber (Due, less than 24h left). If it's Monday 10 AM → green (On track).</span>
+      </li>
+
+      <li><b style="color:var(--text)">Senior Bucket (Initial Closer Meeting Set) — 1 day from ModifiedTime:</b> Once an agent sets a meeting with a senior closer, the senior has 24 hours from that moment to follow through. Leads are grouped by senior so each person sees only their queue.
+        <span class="eg">Example: Agent marks Priya's lead "Initial Closer Meeting Set" on Monday 10 AM. Deadline: Tuesday 10 AM. If the senior hasn't acted by then → red, visible under their name in the Senior Bucket tab.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Contact Attempts — 24h each stage from ModifiedTime:</b> Covers <code>1st Contact Failed</code> through <code>5th Contact Failed</code>. Every time an agent logs a failed attempt and advances the status, a fresh 24-hour window opens from that moment. The previous stage's clock does not carry over — each attempt is judged on its own.
+        <span class="eg">Example: No answer on Monday → "1st Contact Failed" logged at 2 PM → deadline Tuesday 2 PM. Agent calls Tuesday, no answer → "2nd Contact Failed" at 3 PM → fresh deadline Wednesday 3 PM. And so on up to the 5th attempt. After the 5th, the lead should be moved to Dead / Parked / Reschedule.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Reschedule — 24h each stage; first stage from RescheduleDate:</b> When a meeting was missed and a new date is promised, the clock for the first attempt starts from that promised date — not from when someone edited the CRM record. This holds the team accountable to the commitment made to the lead.
+        <span class="eg">Example: Meeting missed. Status set to "Reschedule Initial Closer Meeting", RescheduleDate = Tuesday 2 PM → deadline Wednesday 2 PM. Agent tries again Wednesday, fails → "Reschedule 2nd Attempt" logged at 3 PM → fresh 24h → deadline Thursday 3 PM. "3rd Attempt" Thursday → deadline Friday. That's the last chance in this bucket.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Parked — 24h each stage; first stage from FutureDateParked:</b> Lead asked to be called after a specific future date. The clock starts from that parked date, not from today. Later attempts each get their own fresh 24h from ModifiedTime.
+        <span class="eg">Example: Lead says "call me after Jan 15." Marked "Parked Lead", FutureDateParked = Jan 15. Deadline to call: Jan 16. Nobody calls → "Park lead 1st Attempt" logged Jan 17 → deadline Jan 18. 2nd Attempt Jan 18 → deadline Jan 19. 3rd Attempt → last chance. (The 230-day overdue lead you saw in the dashboard is exactly this — parked to Jan 7, 2026, never called.)</span>
+      </li>
+
+      <li><b style="color:var(--text)">Followup — 24h each stage; first stage from ContactedFollowupTS:</b> Lead was reached and expressed interest, but needs a follow-up call. A dedicated timestamp (<code>ContactedFollowupTS</code>) marks when the follow-up commitment was made — the first stage is anchored there. Later follow-ups each restart from ModifiedTime.
+        <span class="eg">Example: Agent speaks to Sunita on Monday 11 AM, marks "Contacted (But Followup Needs)", ContactedFollowupTS = Monday 11 AM → deadline Tuesday 11 AM. Agent calls Tuesday, no answer → "Followup 1" at noon → fresh deadline Wednesday noon. "Followup 2" Wednesday → fresh 24h. "Followup 3" Thursday → last attempt in this bucket.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Response Awaited — 7 days from ModifiedTime:</b> The lead said they will get back to you. The dashboard gives them 7 days of patience. If 7 days pass without a status change, the lead is flagged — time to proactively reach out.
+        <span class="eg">Example: Vikram says "let me discuss with family, I'll call back" → marked "Response Awaited by Lead" Monday. Deadline: next Monday (7 days). Day 6 → amber (Due, follow up now). If no update for 2+ days within that window → also flagged yellow (Stale). After 7 days with no response → red (Breached).</span>
+      </li>
+
+      <li><b style="color:var(--text)">Protocol Drift — "Behind Protocol" badge:</b> A second, independent check layered on top of the per-stage clock. It asks: given how long ago this bucket started, what stage should this lead be at by now? If the lead's actual stage is behind that expected pace (1 stage per day), it is forced to red and badged <b>Behind Protocol</b> — even if the current stage's own 24h clock is still running. This catches agents who refresh a record with an unrelated edit to reset the clock without actually progressing the lead.
+        <span class="eg">Example: Lead created Monday. Today is Thursday — 3 days elapsed, so the lead should be at 3rd Contact Failed minimum. Actual status: still 1st Contact Failed (stage 1). Even if the agent edited a note yesterday (so ModifiedTime looks fresh), drift check sees: expected stage 3, actual stage 1 → 2 stages behind → forced red, "Behind Protocol." Applies to Contact Attempts (anchor: CreatedTime), Reschedule (anchor: RescheduleDate), Parked (anchor: FutureDateParked), and Followup (anchor: ContactedFollowupTS).</span>
+      </li>
+
+      <li><b style="color:var(--text)">Stale flag — yellow even inside SLA:</b> Even if a lead hasn't breached its deadline yet, if ModifiedTime is 2+ days old it turns yellow. This catches the exact gap where an agent calls on day 1 then goes silent for several days before the lead officially "expires."
+        <span class="eg">Example: Lead's 5-day SLA runs Monday → Saturday. It's now Thursday. ModifiedTime is still Monday — 3 days of silence. Dashboard flags it yellow even though the SLA deadline is Saturday. Agent can fix it by calling and updating the status today.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Any missing baseline date — graceful fallback:</b> If the required date field is blank (e.g. someone forgot to fill in RescheduleDate), the dashboard doesn't crash or silently drop the lead. It falls back to ModifiedTime, then CreatedTime, so the lead still appears in the queue with a reasonable deadline.
+        <span class="eg">Example: Lead is "Reschedule Initial Closer Meeting" but RescheduleDate was left blank. Dashboard falls back to ModifiedTime for the deadline. Lead still shows up — nothing slips through a gap in data entry.</span>
+      </li>
+
+      <li><b style="color:var(--text)">Hidden entirely — no queue, not counted as open:</b> These statuses mean the lead is closed, disqualified, or in a state where daily calling pressure is meaningless. They are removed from all tabs and counts.
+        <span class="eg">Statuses hidden: <code>Initial Closer Meeting Successful</code>, <code>P&amp;L Shared</code>, <code>Term Sheet Signed</code>, <code>Franchise Fee Collected</code> — deal is progressing, nothing to chase. <code>Junk Lead</code>, <code>Dead Lead</code>, <code>Not Qualified</code> — no further action possible. <code>Data Collection</code>, <code>Contacted &amp; Interested</code> — intermediate states with no reliable deadline. <code>Re-Engaged Dead Leads</code> — excluded because there is no reliable "re-engaged on" timestamp; any SLA calculated would be fabricated.</span>
+      </li>
+
+      <li><b style="color:var(--text)">CRM ↗ links:</b> Every lead card links directly to its Zoho CRM record. The URL pattern is built automatically based on the module — Zomoz and SharkSports use different CRM tab paths, handled transparently.
+        <span class="eg">Zomoz lead → opens crm.zoho.in → Leads tab → that exact record. SharkSports lead → opens crm.zoho.in → CustomModule1 tab → that exact record. The ID used is the CRM's internal record ID, not the sheet row ID.</span>
+      </li>
+
     </ul>
   </div>
 
