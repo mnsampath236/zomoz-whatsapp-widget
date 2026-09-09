@@ -64,11 +64,32 @@ a{color:inherit;}
 }
 .brand h1{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-0.01em;}
 .brand p{font-size:12px;color:var(--text-dim);margin-top:1px;}
+.topbar-right{display:flex;align-items:center;gap:14px;}
 .clock{
   font-family:var(--mono);font-size:13px;color:var(--text-dim);
   text-align:right;line-height:1.5;
 }
 .clock b{color:var(--text);font-weight:500;}
+.refresh-btn{
+  display:flex;align-items:center;gap:6px;
+  font-family:var(--body);font-size:13px;font-weight:500;
+  color:var(--text-dim);background:transparent;
+  border:1px solid var(--border);border-radius:8px;
+  padding:6px 12px;cursor:pointer;
+  transition:border-color .15s,color .15s,opacity .15s;
+  white-space:nowrap;user-select:none;
+}
+.refresh-btn:hover:not(:disabled){border-color:var(--text-faint);color:var(--text);}
+.refresh-btn:disabled{opacity:0.45;cursor:default;}
+.refresh-btn .r-icon{flex-shrink:0;transition:transform .15s;}
+.refresh-btn.spinning .r-icon{animation:spin 0.8s linear infinite;}
+.refresh-btn.ok{border-color:var(--teal);color:var(--teal);}
+.refresh-notice{
+  font-family:var(--mono);font-size:11px;margin-top:3px;text-align:right;
+  height:14px;transition:opacity .3s;
+}
+.refresh-notice.err{color:var(--red);}
+.refresh-notice.ok{color:var(--teal);}
 
 /* ---------- Hero ---------- */
 .hero{padding:34px 0 8px;}
@@ -260,7 +281,19 @@ tbody td{padding:11px 14px;vertical-align:middle;}
         <p>Zomoz + SharkSports &middot; live SLA &amp; contact-cadence monitor</p>
       </div>
     </div>
-    <div class="clock" id="clock"></div>
+    <div class="topbar-right">
+      <div>
+        <button class="refresh-btn" id="refreshBtn" title="Reload data from Zoho CRM">
+          <svg class="r-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2.5A6 6 0 1 1 7 1a6 6 0 0 1 4.24 1.76"/>
+            <polyline points="13 1 13 4 10 4"/>
+          </svg>
+          Refresh
+        </button>
+        <div class="refresh-notice" id="refreshNotice"></div>
+      </div>
+      <div class="clock" id="clock"></div>
+    </div>
   </div>
 </div>
 
@@ -268,7 +301,7 @@ tbody td{padding:11px 14px;vertical-align:middle;}
 
   <div id="loadState" class="state-msg">
     <div class="state-spinner"></div>
-    Loading leads from Google Sheets&hellip;
+    Loading leads from Zoho CRM&hellip;
   </div>
   <div id="errorState" class="state-msg state-error" style="display:none"></div>
 
@@ -847,7 +880,15 @@ function showError(message, detail){
   document.getElementById('loadState').style.display = 'none';
   const err = document.getElementById('errorState');
   err.style.display = 'flex';
-  err.innerHTML = `<div>${message}</div>` + (detail ? `<code>${escapeHtml(detail)}</code>` : '');
+  err.textContent = '';
+  const msgEl = document.createElement('div');
+  msgEl.textContent = message;
+  err.appendChild(msgEl);
+  if(detail){
+    const code = document.createElement('code');
+    code.textContent = detail;
+    err.appendChild(code);
+  }
 }
 
 function passesAccessGate(){
@@ -858,47 +899,107 @@ function passesAccessGate(){
   return true;
 }
 
+/* Core data-fetch function.
+ * isRefresh=false → initial load (uses loadState spinner, shows mainApp on success).
+ * isRefresh=true  → in-place refresh (keeps mainApp visible, uses button spinner). */
+async function loadData(isRefresh){
+  const btn = document.getElementById('refreshBtn');
+  const notice = document.getElementById('refreshNotice');
+
+  if(isRefresh){
+    btn.disabled = true;
+    btn.classList.add('spinning');
+    btn.classList.remove('ok');
+    notice.textContent = '';
+    notice.className = 'refresh-notice';
+  }
+
+  const apiUrl = API_URL + (API_TOKEN ? (API_URL.indexOf('?')===-1?'?':'&') + 'token=' + encodeURIComponent(API_TOKEN) : '');
+  let res, json;
+
+  try{
+    res = await fetch(apiUrl);
+  }catch(fetchErr){
+    if(isRefresh){
+      btn.disabled = false; btn.classList.remove('spinning');
+      notice.textContent = 'Network error — try again';
+      notice.className = 'refresh-notice err';
+    } else {
+      showError('Couldn\'t reach the Apps Script API.', 'Network error or CORS block: ' + fetchErr.message + '. Confirm the web app is deployed with access set to "Anyone".');
+    }
+    return;
+  }
+  if(!res.ok){
+    if(isRefresh){
+      btn.disabled = false; btn.classList.remove('spinning');
+      notice.textContent = 'HTTP ' + res.status + ' — try again';
+      notice.className = 'refresh-notice err';
+    } else {
+      showError('The Apps Script API returned an error.', 'HTTP ' + res.status + '. Open the API_URL directly in a browser tab to see the raw response.');
+    }
+    return;
+  }
+  try{
+    json = await res.json();
+  }catch(parseErr){
+    if(isRefresh){
+      btn.disabled = false; btn.classList.remove('spinning');
+      notice.textContent = 'Bad response — try again';
+      notice.className = 'refresh-notice err';
+    } else {
+      showError('The API response wasn\'t valid JSON.', 'Check that doGet() in Code.gs is deployed with your latest changes.');
+    }
+    return;
+  }
+  if(json.error){
+    const hint = json.error.indexOf('token') !== -1
+      ? 'Zoho auth issue — usually transient, refresh in a moment. If it persists, check the OAuth credentials in Script Properties.'
+      : 'Check API_TOKEN matches CONFIG.API_TOKEN in Code.gs.';
+    if(isRefresh){
+      btn.disabled = false; btn.classList.remove('spinning');
+      notice.textContent = 'Refresh failed — try again';
+      notice.className = 'refresh-notice err';
+    } else {
+      showError('The Apps Script API rejected the request.', json.error + ' — ' + hint);
+    }
+    return;
+  }
+
+  // Success — update data and re-render in place
+  DATA = json;
+  NOW = new Date();
+  mainQueue = DATA.mainQueue.map(d=>deriveLead(d, NOW));
+
+  if(!isRefresh){
+    document.getElementById('loadState').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'block';
+    populateFilters();
+  }
+
+  renderAll();
+  renderCharts();
+
+  if(isRefresh){
+    btn.disabled = false;
+    btn.classList.remove('spinning');
+    btn.classList.add('ok');
+    const t = NOW.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    notice.textContent = 'Updated ' + t;
+    notice.className = 'refresh-notice ok';
+    setTimeout(()=>{ btn.classList.remove('ok'); notice.textContent=''; notice.className='refresh-notice'; }, 4000);
+  }
+}
+
 async function boot(){
   if(!passesAccessGate()) return;
   if(!API_URL || API_URL.indexOf('PASTE_') === 0){
     showError('index.html isn\'t configured yet.', 'Set API_URL (and API_TOKEN) near the top of the <script> tag to your deployed Apps Script web app URL.');
     return;
   }
-  let res, json;
-  try{
-    const url = API_URL + (API_TOKEN ? (API_URL.indexOf('?')===-1?'?':'&') + 'token=' + encodeURIComponent(API_TOKEN) : '');
-    res = await fetch(url);
-  }catch(err){
-    showError('Couldn\'t reach the Apps Script API.', 'Network error or CORS block: ' + err.message + '. Confirm the web app is deployed with access set to "Anyone".');
-    return;
-  }
-  if(!res.ok){
-    showError('The Apps Script API returned an error.', 'HTTP ' + res.status + '. Open the API_URL directly in a browser tab to see the raw response.');
-    return;
-  }
-  try{
-    json = await res.json();
-  }catch(err){
-    showError('The API response wasn\'t valid JSON.', 'Check that doGet() in Code.gs is deployed with your latest changes.');
-    return;
-  }
-  if(json.error){
-    showError('The Apps Script API rejected the request.', json.error + ' — check API_TOKEN matches CONFIG.API_TOKEN in Code.gs.');
-    return;
-  }
-
-  DATA = json;
-  NOW = new Date();
-  mainQueue = DATA.mainQueue.map(d=>deriveLead(d, NOW));
-
-  document.getElementById('loadState').style.display = 'none';
-  document.getElementById('mainApp').style.display = 'block';
-
-  populateFilters();
-  renderAll();
-  renderCharts();
+  await loadData(false);
 }
 
+document.getElementById('refreshBtn').addEventListener('click', ()=>loadData(true));
 boot();
 </script>
 </body>
