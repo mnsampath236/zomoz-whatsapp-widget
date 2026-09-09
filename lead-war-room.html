@@ -90,6 +90,17 @@ a{color:inherit;}
 }
 .refresh-notice.err{color:var(--red);}
 .refresh-notice.ok{color:var(--teal);}
+.stale-banner{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--amber-bg);border:1px solid var(--amber);border-radius:10px;
+  padding:10px 16px;margin:16px 0 4px;font-size:13px;color:var(--amber);
+}
+.stale-banner b{font-weight:600;}
+.stale-banner .stale-retry{
+  margin-left:auto;font-size:12px;font-weight:500;cursor:pointer;
+  text-decoration:underline;text-underline-offset:2px;color:var(--amber);
+  background:none;border:none;padding:0;font-family:inherit;
+}
 
 /* ---------- Hero ---------- */
 .hero{padding:34px 0 8px;}
@@ -258,6 +269,36 @@ tbody td{padding:11px 14px;vertical-align:middle;}
   border:1px solid var(--red);border-radius:12px;margin-top:20px;
 }
 .state-error code{font-family:var(--mono);background:var(--panel-2);color:var(--text);padding:2px 6px;border-radius:4px;font-size:12px;margin-top:8px;display:inline-block;}
+/* ---------- Initial load progress card ---------- */
+.load-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:28px 32px;width:100%;max-width:460px;
+}
+.load-header{display:flex;align-items:center;gap:14px;margin-bottom:20px;}
+.load-brand{
+  width:36px;height:36px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--red),var(--amber));
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-weight:700;font-size:14px;color:#0A0D12;
+}
+.load-title{font-family:var(--display);font-weight:600;font-size:15px;}
+.load-stage{font-size:13px;color:var(--text-dim);margin-top:3px;min-height:18px;}
+.load-pct{
+  margin-left:auto;font-family:var(--mono);font-weight:600;font-size:28px;
+  color:var(--text);min-width:58px;text-align:right;letter-spacing:-0.03em;
+}
+.progress-track{
+  height:6px;background:var(--panel-2);border-radius:99px;overflow:hidden;
+}
+.progress-fill{
+  height:100%;width:0%;border-radius:99px;
+  background:linear-gradient(90deg,var(--blue),var(--teal));
+  transition:width 0.12s ease-out;
+}
+.load-hint{
+  font-size:11px;color:var(--text-faint);font-family:var(--mono);
+  text-align:center;margin-top:14px;line-height:1.5;
+}
 
 ::-webkit-scrollbar{width:8px;height:8px;}
 ::-webkit-scrollbar-track{background:transparent;}
@@ -299,13 +340,31 @@ tbody td{padding:11px 14px;vertical-align:middle;}
 
 <div class="wrap">
 
-  <div id="loadState" class="state-msg">
-    <div class="state-spinner"></div>
-    Loading leads from Zoho CRM&hellip;
+  <div id="loadState" style="display:flex;justify-content:center;align-items:center;padding:80px 20px;">
+    <div class="load-card">
+      <div class="load-header">
+        <div class="load-brand">FL</div>
+        <div>
+          <div class="load-title">Franchise Lead War Room</div>
+          <div id="progressStage" class="load-stage">Connecting&hellip;</div>
+        </div>
+        <div id="progressPct" class="load-pct">0%</div>
+      </div>
+      <div class="progress-track">
+        <div id="progressFill" class="progress-fill"></div>
+      </div>
+      <div class="load-hint">Fetching live data from Zoho CRM &middot; first load may take 30&ndash;60 s</div>
+    </div>
   </div>
   <div id="errorState" class="state-msg state-error" style="display:none"></div>
 
   <div id="mainApp" style="display:none">
+
+  <div id="staleBanner" style="display:none" class="stale-banner">
+    <span>&#9888;</span>
+    <span id="staleMsg"><b>Showing cached data</b> — Zoho auth was unavailable when the page loaded.</span>
+    <button class="stale-retry" onclick="loadData(true)">Refresh now</button>
+  </div>
 
   <div class="hero">
     <div class="hero-headline" id="heroHeadline">Loading&hellip;</div>
@@ -877,6 +936,7 @@ function renderAll(){
 
 // ---------------- bootstrap: fetch from the Apps Script JSON API ----------------
 function showError(message, detail){
+  clearInterval(_progTimer); // stop progress bar if it was running
   document.getElementById('loadState').style.display = 'none';
   const err = document.getElementById('errorState');
   err.style.display = 'flex';
@@ -912,6 +972,8 @@ async function loadData(isRefresh){
     btn.classList.remove('ok');
     notice.textContent = '';
     notice.className = 'refresh-notice';
+  } else {
+    startProgress_();
   }
 
   const apiUrl = API_URL + (API_TOKEN ? (API_URL.indexOf('?')===-1?'?':'&') + 'token=' + encodeURIComponent(API_TOKEN) : '');
@@ -965,29 +1027,94 @@ async function loadData(isRefresh){
     return;
   }
 
-  // Success — update data and re-render in place
+  // Success — update data
   DATA = json;
   NOW = new Date();
   mainQueue = DATA.mainQueue.map(d=>deriveLead(d, NOW));
 
+  // Shared render + stale-banner update, called after any transition
+  const applyAndRender_ = () => {
+    const staleBanner = document.getElementById('staleBanner');
+    if(DATA.stale){
+      let ageStr = '';
+      if(DATA.generatedAt){
+        const ageMins = Math.round((NOW - new Date(DATA.generatedAt)) / 60000);
+        ageStr = ageMins > 1 ? ' from ' + ageMins + ' minutes ago' : ' from less than a minute ago';
+      }
+      const staleMsg = document.getElementById('staleMsg');
+      staleMsg.textContent = '';
+      const b = document.createElement('b'); b.textContent = 'Showing cached data' + ageStr;
+      staleMsg.appendChild(b);
+      staleMsg.appendChild(document.createTextNode(' \u2014 Zoho auth was temporarily unavailable. Data may not reflect the latest changes.'));
+      staleBanner.style.display = 'flex';
+    } else {
+      staleBanner.style.display = 'none';
+    }
+    renderAll();
+    renderCharts();
+  };
+
   if(!isRefresh){
-    document.getElementById('loadState').style.display = 'none';
-    document.getElementById('mainApp').style.display = 'block';
-    populateFilters();
-  }
-
-  renderAll();
-  renderCharts();
-
-  if(isRefresh){
+    // Animate to 100% then reveal the app
+    finishProgress_(() => {
+      document.getElementById('loadState').style.display = 'none';
+      document.getElementById('mainApp').style.display = 'block';
+      populateFilters();
+      applyAndRender_();
+    });
+  } else {
+    applyAndRender_();
     btn.disabled = false;
     btn.classList.remove('spinning');
-    btn.classList.add('ok');
-    const t = NOW.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    notice.textContent = 'Updated ' + t;
-    notice.className = 'refresh-notice ok';
-    setTimeout(()=>{ btn.classList.remove('ok'); notice.textContent=''; notice.className='refresh-notice'; }, 4000);
+    if(!DATA.stale){
+      btn.classList.add('ok');
+      const t = NOW.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      notice.textContent = 'Updated ' + t;
+      notice.className = 'refresh-notice ok';
+      setTimeout(()=>{ btn.classList.remove('ok'); notice.textContent=''; notice.className='refresh-notice'; }, 4000);
+    } else {
+      notice.textContent = 'Showing cached data';
+      notice.className = 'refresh-notice err';
+    }
   }
+}
+
+// ---- Initial load progress simulation ----
+// Each stage: [target %, speed %/100 ms tick, label]
+const LOAD_STAGES_ = [
+  [12,  1.20, 'Connecting to API\u2026'],
+  [42,  0.50, 'Authenticating with Zoho CRM\u2026'],
+  [75,  0.28, 'Fetching lead records\u2026'],
+  [91,  0.11, 'Processing data\u2026'],
+  [97,  0.03, 'Almost ready\u2026'],
+];
+let _progTimer = null, _progVal = 0, _progStage = 0;
+
+function startProgress_() {
+  _progVal = 0; _progStage = 0;
+  _setProg_(0, LOAD_STAGES_[0][2]);
+  _progTimer = setInterval(function() {
+    const st = LOAD_STAGES_[_progStage];
+    if (!st) return;
+    _progVal = Math.min(_progVal + st[1], st[0]);
+    _setProg_(_progVal, st[2]);
+    if (_progVal >= st[0] && _progStage < LOAD_STAGES_.length - 1) _progStage++;
+  }, 100);
+}
+
+function _setProg_(pct, msg) {
+  const fill = document.getElementById('progressFill');
+  const pctEl = document.getElementById('progressPct');
+  const stEl  = document.getElementById('progressStage');
+  if (fill)  fill.style.width = pct.toFixed(1) + '%';
+  if (pctEl) pctEl.textContent = Math.floor(pct) + '%';
+  if (stEl && msg) stEl.textContent = msg;
+}
+
+function finishProgress_(cb) {
+  clearInterval(_progTimer);
+  _setProg_(100, 'Done!');
+  setTimeout(cb, 380);
 }
 
 async function boot(){
